@@ -370,6 +370,10 @@ class ZoneTrashDetector:
 
         Chỉ chạy sau reset nên không đụng gì tới đường chạy thường — số báo nhầm
         trên chuỗi sạch giữ nguyên.
+
+        CHƯA LÀM: chỗ gọi nằm trong nhánh `change_only`, nên mode `classifier`
+        không có lớp vá này. Không vá vì `classifier` cần dữ liệu train của
+        chính camera đó, mà chưa camera nào có.
         """
         if self._resweep <= 0 or self.verifier is None or not self.verifier.enabled:
             return

@@ -163,8 +163,12 @@ class RegionVerifier:
         tiles = [(x, y) for y in ys for x in xs]
         if len(tiles) > max_tiles:
             # Vùng quá to so với trần: giãn thưa ra thay vì cắt cụt một nửa vùng,
-            # thà thưa đều còn hơn mù hẳn phần dưới.
+            # thà thưa đều còn hơn mù hẳn phần dưới. NHƯNG phải kêu lên — cắt bớt
+            # trong im lặng thì nhìn vào kết quả cứ tưởng đã quét hết vùng.
             k = (len(tiles) + max_tiles - 1) // max_tiles
+            logger.warning("quét toàn vùng: cần %d ô lát, trần %d -> lấy thưa "
+                           "1/%d, CÓ THỂ SÓT. Thu hẹp vùng hoặc nâng max_tiles.",
+                           len(tiles), max_tiles, k)
             tiles = tiles[::k][:max_tiles]
 
         crops, offs = [], []
