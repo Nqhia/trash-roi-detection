@@ -41,7 +41,8 @@ import yaml         # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.pipeline import ZoneTrashDetector      # noqa: E402
+from core.pipeline import ZoneTrashDetector
+from tools.capture import open_source      # noqa: E402
 from core.scorers import build_scorer            # noqa: E402
 
 IMG_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
@@ -73,26 +74,12 @@ def iter_frames(source: str, interval_s: float):
     live = not is_file
 
     def _open():
-        c = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
-        try:
-            c.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 8000)
-            c.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 8000)
-        except Exception:  # noqa: BLE001 — build OpenCV cũ không có 2 cờ này
-            pass
-        return c
+        # Kiểm bằng KHUNG THẬT, không tin isOpened(): trên WSL2 camera trả
+        # isOpened()=True rồi read() hỏng mãi vì RTSP đi UDP. Xem tools/capture.py.
+        return open_source(source, tries=5 if live else 1, probe=live)
 
-    # Camera IP hay từ chối kết nối đầu (giới hạn số session, vừa reboot...).
-    # Thử lại vài lần thay vì chết ngay — đã gặp thật trên camera Hikvision.
-    cap = None
-    for k in range(5 if live else 1):
-        cap = _open()
-        if cap.isOpened():
-            break
-        cap.release()
-        logging.getLogger("run_video").warning(
-            "chưa mở được nguồn, thử lại (%d)...", k + 1)
-        time.sleep(2)
-    if cap is None or not cap.isOpened():
+    cap = _open()
+    if cap is None:
         sys.exit(f"không mở được nguồn: {source}")
     next_t, t0, fails = 0.0, time.time(), 0
     try:

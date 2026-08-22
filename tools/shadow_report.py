@@ -21,11 +21,29 @@ from collections import Counter
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--scans", required=True)
+    # nhan NHIEU file: keepalive doi ten scans.csv moi lan bat lai, doc mot
+    # file la bao cao thieu mat cac doan truoc ma khong noi gi.
+    ap.add_argument("--scans", required=True, nargs="+")
     ap.add_argument("--bin-min", type=float, default=30.0)
     args = ap.parse_args()
 
-    rows = list(csv.DictReader(open(args.scans, newline="", encoding="utf-8")))
+    rows = []
+    for f in sorted(args.scans):
+        part = list(csv.DictReader(open(f, newline="", encoding="utf-8")))
+        if len(args.scans) > 1:
+            print(f"  {f}: {len(part)} lượt")
+        rows += part
+    # Moi lan bat lai, t_s dem lai tu 0 -> phai noi lien mach, khong thi bieu do
+    # theo gio nhay lung tung ma khong ai thay.
+    off, prev, fixed = 0.0, -1.0, []
+    for r in rows:
+        t = float(r["t_s"])
+        if t < prev:
+            off = prev + 30.0
+        prev = t
+        r["t_s"] = str(t + off)
+        fixed.append(r)
+    rows = fixed
     if not rows:
         return print("chưa có lượt nào") or 1
     n = len(rows)

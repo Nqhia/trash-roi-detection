@@ -36,6 +36,8 @@ import yaml         # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from tools.capture import open_source   # noqa: E402
+
 from core.grid import poly_to_px                          # noqa: E402
 from core.pipeline import ZoneTrashDetector               # noqa: E402
 from core.reference import make_thumb, scene_shift        # noqa: E402
@@ -57,7 +59,9 @@ class Grabber(threading.Thread):
         self.stop_ev, self.fails, self.n = threading.Event(), 0, 0
 
     def _open(self):
-        cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
+        cap = open_source(self.source, tries=5)
+        if cap is None:
+            raise SystemExit(f'khong lay duoc khung tu {self.source}')
         try:
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)   # càng ít đệm càng ít trễ
             cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 8000)

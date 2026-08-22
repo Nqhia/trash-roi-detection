@@ -26,6 +26,8 @@ import numpy as np  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from tools.capture import open_source   # noqa: E402
+
 from core.grid import build_grid, poly_to_px      # noqa: E402
 from core.reference import make_thumb             # noqa: E402
 
@@ -36,7 +38,7 @@ def grab(source: str):
     if os.path.isfile(source):
         cap = cv2.VideoCapture(source)
     else:
-        cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+        cap = open_source(source, tries=5)
     f = None
     for _ in range(15):
         ok, f = cap.read()

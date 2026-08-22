@@ -25,9 +25,9 @@ while true; do
   if [ -f "$OUT/scans.csv" ]; then
     mv "$OUT/scans.csv" "$OUT/scans_$(date +%Y%m%d_%H%M%S).csv"
   fi
-  echo "=== lan chay thu $n · $(date +'%Y-%m-%d %H:%M:%S') ===" >> "$OUT/../shadow.log"
+  echo "=== lan chay thu $n · $(date +'%Y-%m-%d %H:%M:%S') ===" >> "$OUT/run.log"
   "$P" -u tools/run_video.py --source "$SRC" --zone "$ZONE" --config "$CFG" \
-      --out "$OUT" >> "$OUT/../shadow.log" 2>&1
-  echo "=== thoat luc $(date +'%H:%M:%S'), bat lai sau 30s ===" >> "$OUT/../shadow.log"
+      --out "$OUT" >> "$OUT/run.log" 2>&1
+  echo "=== thoat luc $(date +'%H:%M:%S'), bat lai sau 30s ===" >> "$OUT/run.log"
   sleep 30
 done
