@@ -82,9 +82,16 @@ class TrashConsumer:
         # 30s không phải để tiết kiệm máy (206 ms/lượt) mà vì `dwell_scans` đang
         # đo THỜI GIAN TỒN TẠI: 3 lượt x 30s = 90 giây. Quét dày hơn mà giữ
         # nguyên dwell thì người đứng xem điện thoại 30 giây cũng đủ điều kiện.
+        #
+        # BẪY: nếu sau này nhịp bị chỉnh từ runtime config/UI thì PHẢI chỉnh
+        # `decide.dwell_scans` theo tỉ lệ nghịch, không thì khả năng phân biệt
+        # rác với người đi qua đổi theo mà không ai thấy. dwell đếm LƯỢT, chỉ có
+        # `interval_s` mới quy nó ra giây.
         return float(self.cfg.get("scan", {}).get("interval_s", 30))
 
     def camera_on(self, cam: dict) -> bool:
+        # Mặc định TẮT (khác weapon mặc định bật): module này vô nghĩa khi chưa
+        # ai vẽ vùng, nên phải là bật-có-chủ-ý.
         return bool(cam.get("trash_enabled", False))
 
     def _for(self, camera_id: str, idx: int) -> ZoneTrashDetector:
@@ -96,6 +103,9 @@ class TrashConsumer:
         return self._det[key]
 
     def detect(self, ctx) -> list:
+        # roi.for_detector() lọc zone theo `classes` giao với `labels`, nên zone
+        # trên UI phải được gán lớp `trash` — không thì polygons rỗng và module
+        # im lặng dù người dùng đã vẽ vùng.
         polys = (ctx.roi.polygons or []) if ctx.roi else []
         if not polys:
             # Không vẽ vùng thì không có bài toán: "vùng này có còn trống không"
@@ -111,6 +121,11 @@ class TrashConsumer:
             if not res.alert:
                 continue
             for bx in (res.verify_boxes or self._cell_boxes(res)):
+                # score=1.0 cố định: tới đây chuỗi cổng (bền vững -> xác nhận
+                # -> chốt) ĐÃ quyết rồi, không còn đại lượng liên tục nào để
+                # trả. Điểm thô của detector không phải xác suất "có phải rác",
+                # đo được là ngưỡng tối ưu của nó không chuyển được sang tầng
+                # ghép. Đừng dựng rule lọc theo score cho nhãn này.
                 out.append(Detection(
                     label="trash", score=1.0, bbox=tuple(float(v) for v in bx),
                     source=self.name,

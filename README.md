@@ -408,12 +408,25 @@ sau mọi ô tự chốt hiện trạng làm nền: rác thành bình thường 
 không log gì báo. Kiểu hỏng tệ nhất — hệ thống trông vẫn khoẻ. Đo lại được bằng
 `python3 tools/absorb_test.py`:
 
+Có **bốn** đường dẫn tới chỗ nền bị bỏ, không phải một. Mỗi ca dưới đây đều đã
+được chạy trên code CŨ trước để chắc nó thật sự bắt lỗi chứ không phải test rỗng:
+
 | ca | trước | sau |
 |---|---|---|
 | KIỂM CHỨNG không vứt nền | 40 ô nóng | 40 ô nóng |
 | A camera bị hích 30px lúc có rác | **0** *nuốt* | 34 ô nóng |
 | A camera bị hích 60px lúc có rác | **0** *nuốt* | 56 ô nóng |
 | B vận hành CHỐT LẠI NỀN lúc có rác | **0** *nuốt* | 55 ô nóng |
+| C bóng mây trùm 70% khung lúc có rác | **0** *nuốt* | 36 ô nóng |
+| D vận hành SỬA VÙNG trên UI lúc có rác | **0** *nuốt* | 52 ô nóng |
+
+Ca D là đường dễ quên nhất: `grid_signature` gồm cả polygon, nên sửa vùng trên UI
+làm vân tay lưới đổi → nền cũ bị bỏ y như bị hích camera.
+
+Một điều học được khi viết ca C: **đổi sáng ĐỀU không bắn được guard.** Mô tả ô đã
+trừ trung bình nên cộng 55 vào cả khung chỉ làm 88/360 ô đổi, guard 0/10. Phải đổi
+**tương phản** — bóng mây, gamma, đèn pha — mới chạm tới nó. Bản test đầu của tôi
+dùng đổi sáng đều nên nó *pass mà không hề chạy qua đường guard*.
 
 Ba lỗi lồng nhau, phải gỡ cả ba:
 
@@ -441,7 +454,12 @@ Còn lại một đường nữa không tự sửa được: khi camera bị ch�
 `_post_reset_sweep` cho **detector quét khắp vùng** trong `dwell` lượt — detector
 không cần nền. Đòi đúng cùng điều kiện bền vững: thấy liên tiếp `dwell` lượt mới
 tính, nên người đứng lại vài giây không qua được. Chỉ chạy sau khi vứt nền nên
-đường chạy thường không đụng gì: **báo nhầm trên chuỗi sạch giữ nguyên 0%**.
+đường chạy thường không đụng gì: **báo nhầm trên chuỗi sạch giữ nguyên 0%**,
+khung eco giữ nguyên 18/21 · 3 hộp thừa.
+
+Ô do quét thêm vào vẫn phải qua **mặt nạ nhiễu** như đường thường. Mặt nạ không bị
+xoá khi guard bắn, nên bỏ qua nó ở đây thì một ô đã mute vì bẩn suốt 5 giờ sẽ báo
+lại ngay sau mỗi lần đổi sáng — đúng thứ mặt nạ sinh ra để chặn.
 
 **Cảnh đông người không dùng được.** video11 có người ở 99% số lượt → 21/78 ô
 nóng, `dwell` vô dụng. Ngưỡng tự kiểm: >70% số lượt có người → không dùng được.

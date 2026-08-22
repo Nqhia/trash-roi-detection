@@ -37,6 +37,8 @@ from core.scorers import build_scorer         # noqa: E402
 ROOT = os.path.abspath(os.path.join(HERE, ".."))
 SITE = os.path.join(ROOT, "data", "site", "pos_raw")
 FULL_POLY = [[0.02, 0.02], [0.98, 0.02], [0.98, 0.98], [0.02, 0.98]]
+# Vùng bị sửa trên UI: cùng cảnh, khác vân tay lưới -> nền cũ bị bỏ.
+EDITED_POLY = [[0.05, 0.02], [0.98, 0.02], [0.98, 0.95], [0.05, 0.95]]
 
 
 def knock(im: np.ndarray, px: int) -> np.ndarray:
@@ -47,9 +49,21 @@ def knock(im: np.ndarray, px: int) -> np.ndarray:
                           borderMode=cv2.BORDER_REPLICATE)
 
 
+def cloud(im: np.ndarray, frac: float = 0.7) -> np.ndarray:
+    """Bóng mây trùm 70% khung — cái THỰC SỰ bắn guard đổi sáng toàn cục.
+
+    Đổi sáng ĐỀU thì không bắn được: mô tả ô đã trừ trung bình nên cộng 55 vào
+    cả khung làm mô tả gần như không đổi (đo được 88/360 ô đổi, guard 0/10).
+    Phải đổi TƯƠNG PHẢN mới chạm tới guard — bóng mây, gamma, đèn pha.
+    """
+    o = im.astype(np.float32)
+    o[:, :int(im.shape[1] * frac)] *= 0.45
+    return np.clip(o, 0, 255).astype(np.uint8)
+
+
 def run(cfg: dict, ref: np.ndarray, trash: np.ndarray, mode: str,
         n: int = 15, shift_px: int = 30) -> tuple:
-    """-> (số ô nóng lớn nhất trong n lượt, số lượt bị vứt nền)"""
+    """-> (số ô nóng lớn nhất, số lượt vứt nền, số lượt guard bắn)"""
     det = ZoneTrashDetector(cfg, build_scorer({"kind": "constant", "value": 0.0}),
                             camera_id=f"absorb_{mode}", zone_id="z")
     t = 0.0
@@ -60,14 +74,21 @@ def run(cfg: dict, ref: np.ndarray, trash: np.ndarray, mode: str,
     t += 30.0
     if mode == "B":
         det.reset_background()                # vận hành chốt lại nền ĐÚNG LÚC CÓ RÁC
-    best, n_reset = 0, 0
+    best, n_reset, n_guard = 0, 0, 0
     for i in range(n):
-        fr = knock(trash, shift_px) if mode == "A" else trash
-        res = det.scan(fr, FULL_POLY, [], now=t)
+        if mode == "A":
+            fr = knock(trash, shift_px)
+        elif mode == "C":
+            fr = cloud(trash)
+        else:
+            fr = trash
+        poly = EDITED_POLY if mode == "D" else FULL_POLY
+        res = det.scan(fr, poly, [], now=t)
         t += 30.0
         n_reset += int(getattr(res, "ref_reset", False))
+        n_guard += int(res.global_change)
         best = max(best, len(res.hot))
-    return best, n_reset
+    return best, n_reset, n_guard
 
 
 def main() -> int:
@@ -99,14 +120,16 @@ def main() -> int:
         ("KIỂM CHỨNG  không vứt nền, rác nằm yên", "ctl"),
         (f"A  camera bị hích {args.shift_px}px lúc có rác", "A"),
         ("B  vận hành CHỐT LẠI NỀN lúc có rác", "B"),
+        ("C  bóng mây trùm 70% khung lúc có rác", "C"),
+        ("D  vận hành SỬA VÙNG trên UI lúc có rác", "D"),
     ]
     bad = 0
     for label, mode in cases:
-        best, n_reset = run(cfg, ref, trash, mode, shift_px=args.shift_px)
+        best, n_reset, n_guard = run(cfg, ref, trash, mode, shift_px=args.shift_px)
         ok = best > 0
         bad += 0 if ok else 1
         print(f"  {label:46s} ô nóng={best:3d}  vứt nền={n_reset}  "
-              f"{'ok' if ok else '*** NUỐT MẤT RÁC ***'}")
+              f"guard={n_guard:2d}/15  {'ok' if ok else '*** NUỐT MẤT RÁC ***'}")
     print("\n" + ("Không ca nào nuốt rác." if not bad else f"{bad} ca còn nuốt rác."))
     return 1 if bad else 0
 

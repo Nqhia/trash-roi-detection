@@ -270,6 +270,11 @@ class ZoneTrashDetector:
                         self.label, self.grid.signature, sig)
             self.ref.reset()
             self.clutter = None
+            # Đường THỨ TƯ tới chỗ nuốt rác: vận hành sửa vùng trên UI đúng lúc
+            # trong vùng đang có rác. Nền vừa bị bỏ nên lượt sau rác thành nền.
+            # Chỉ bật khi ĐÃ TỪNG có lưới — khởi động nguội thì giữ nguyên hợp
+            # đồng cũ ("bật lúc vùng sạch"), không tự ý báo về đồ có sẵn.
+            self._arm_resweep()
         self.grid = build_grid(poly_px, w, h, cell_px=self.cell_px,
                                overlap=self.overlap)
         grid = self.grid
@@ -379,8 +384,13 @@ class ZoneTrashDetector:
             self._sweep_run[c.id] = (self._sweep_run.get(c.id, 0) + 1
                                      if c.id in seen else 0)
         hot_ids = {c.id for c in res.hot}
+        # Mặt nạ nhiễu vẫn phải được tôn trọng: nó KHÔNG bị xoá khi guard bắn,
+        # nên nếu bỏ qua ở đây thì một ô đã mute vì bẩn suốt 5 giờ sẽ báo lại
+        # ngay sau mỗi lần đổi sáng — đúng thứ mặt nạ sinh ra để chặn.
         add = [c for c in live
-               if self._sweep_run.get(c.id, 0) >= self.dwell and c.id not in hot_ids]
+               if self._sweep_run.get(c.id, 0) >= self.dwell
+               and c.id not in hot_ids
+               and not (self.clutter_on and self.clutter.is_muted(c.id))]
         if not add:
             return
         res.hot.extend(add)
