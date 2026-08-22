@@ -7,13 +7,13 @@ Mặt nạ nhiễu TẮT trong mọi ca (cần ~5 giờ mới chín, không đo 
 
 ## Khung eco — rác thật do người vứt
 
-6 khung · 20 vật thật · ảnh: `01_model_only_eco.jpg`, `02_patch_only_eco.jpg`, `03_patch_plus_model_eco.jpg`
+6 khung · 21 vật thật · ảnh: `01_model_only_eco.jpg`, `02_patch_only_eco.jpg`, `03_patch_plus_model_eco.jpg`
 
 | cấu hình | bắt được | hộp thừa |
 |---|---|---|
-| model đứng riêng | 18/20 · 90% | 82 |
-| patch đứng riêng | 18/20 · 90% | 472 |
-| **patch + model** | 17/20 · 85% | 0 |
+| model đứng riêng | 18/21 · 86% | 77 |
+| patch đứng riêng | 18/21 · 86% | 471 |
+| **patch + model** | 18/21 · 86% | 0 |
 
 ## Chuỗi CCTV sạch — không có rác
 
@@ -22,5 +22,5 @@ Mặt nạ nhiễu TẮT trong mọi ca (cần ~5 giờ mới chín, không đo 
 | cấu hình | lượt có báo nhầm |
 |---|---|
 | model đứng riêng | 35/36 · 97% |
-| patch đứng riêng | 17/36 · 47% |
-| **patch + model** | **9/36 · 25%** |
+| patch đứng riêng | 20/36 · 56% |
+| **patch + model** | **10/36 · 28%** |

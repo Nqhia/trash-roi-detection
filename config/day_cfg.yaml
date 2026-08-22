@@ -47,7 +47,11 @@ stabilize:
 
 decide:
   mode: change_only
-  dwell_scans: 5             # 5 x 30s = 2.5 phut
+  # 3 x 30s = 1,5 phut den luc bao. Truoc la 5 + confirm 4/6 = 8 luot = 4,0 phut,
+  # VUOT muc tieu <3 phut. Quet dánh doi (tools/latency_sweep.py) cho thay
+  # dwell 3 + confirm 1/1 co bao nham 1/42 — THAP NHAT bang, bang dung ban cu
+  # cham gap gan 3 lan.
+  dwell_scans: 3
   min_hot_cells: 2
 
 # Tang XAC NHAN: detector phan lai cac o nong do cong doi chi ra.
@@ -72,7 +76,13 @@ verify:
   upscale: 2.0           # PHAI trung upscale luc train (o 320 phong 2x -> 640)
   max_regions: 8
 
-confirm: {n: 4, m: 6}        # cua so 3 phut
+# ConfirmGate sinh ra cho mode `classifier`, noi model cham lai tung o moi luot
+# nen diem nhay lung tung va can loc nhieu NGAU NHIEN. O mode `change_only` thi
+# `dwell` DA ep tinh ben vung bang bo dem `_run` — o phai doi LIEN TIEP N luot.
+# De nguyen 4/6 chong len la loc trung: bat ben vung hai lan, tra gia hai lan
+# bang do tre. Do duoc: 4/6 va 1/1 deu cho 1-2/42 bao nham tren chuoi sach.
+# Bat lai (n>1) neu chuyen sang mode classifier.
+confirm: {n: 1, m: 1}
 alert:
   mode: latch                # bao MOT LAN roi im; xe do 5h chi 1 canh bao
   rearm_scans: 4             # sach 4 luot lien tiep -> mo chot

@@ -54,8 +54,12 @@ như cũ, kèm cờ `verify_failed`. Mất precision còn hơn nuốt cảnh bá
 
 - **`dwell_scans`** — ô phải đổi liên tục N lượt mới "nóng". Đo trên ABODA: 75%
   ô nhiễu do người chỉ đổi **đúng 1 lượt**, ô có vật giữ 10–15 lượt.
-- **ConfirmGate N/M** — cửa sổ trượt. Phải xoá sau khi bắn, không thì lượt sau
-  cửa sổ vẫn còn các `True` cũ và bắn thêm lần nữa.
+- **ConfirmGate N/M** — cửa sổ trượt, diệt FP *ngẫu nhiên*. Phải xoá sau khi
+  bắn, không thì lượt sau cửa sổ vẫn còn các `True` cũ và bắn thêm lần nữa.
+  **Đang đặt `1/1`, tức tắt.** Nó sinh ra cho mode `classifier` nơi model chấm
+  lại từng ô mỗi lượt; ở `change_only` thì `dwell` đã ép tính bền vững rồi, để
+  cả hai là lọc trùng và trả giá bằng độ trễ (4,0 → 1,5 phút khi bỏ). Bật lại
+  nếu chuyển sang `classifier`.
 - **Chốt theo TỪNG Ô** — chốt cả vùng thì một vật đã báo (xe đỗ, thùng rác) nuốt
   mất mọi sự kiện sau. `merge_radius_cells` gộp ô sát ô đã chốt vì các ô của
   cùng một vật đạt ngưỡng dwell lệch nhau vài lượt.
@@ -145,6 +149,22 @@ python3 tools/eval.py --scans runs/shadow/scans.csv
 python3 tools/shadow_report.py --scans runs/shadow/scans.csv
 ```
 
+**Chạy dài (≥24h) thì dùng `keepalive.sh`**, đừng gọi `run_video.py` trực tiếp:
+
+```bash
+bash tools/keepalive.sh 'rtsp://...' config/zone.json config/day_cfg.yaml runs/shadow
+```
+
+Hai lần chạy dài trước đều chết giữa chừng — một lần máy crash, một lần máy ngủ —
+và **không lần nào có dòng "mất kết nối hẳn" trong log**, tức tiến trình bị giết
+từ ngoài chứ không phải lỗi RTSP. `run_video.py` có backoff cho RTSP nhưng không
+tự sống lại được. State (nền + mặt nạ nhiễu) nằm trong `<out>/state` và được nạp
+lại khi khởi động, nên bật lại **không mất 5 giờ học mặt nạ**.
+
+`scans.csv` được `flush()` sau **mỗi lượt**. Bản đầu chỉ `close()` ở cuối nên
+dòng nằm trong buffer, và một lần chết đột ngột đã **mất 6 phút cuối** của lần
+chạy 5,9 giờ.
+
 `eval.py` **từ chối ngoại suy** FP/ngày từ clip dưới 2 giờ.
 `shadow_report.py` trả lời câu khác: cảnh báo có **cụm lại theo thời gian** không
 (→ hoạt động của người) và có **cụm theo vị trí** không (→ một vật cố định).
@@ -230,14 +250,14 @@ biến, và ô rỗng có phải thật rỗng không.
 Sinh lại bằng `python3 tools/run_test_cases.py`. Hai tập kiểm đều **nằm ngoài
 mọi tập train** của detector.
 
-**Khung eco** — camera EcoVision, rác thật do người vứt, 6 khung / 20 vật.
+**Khung eco** — camera EcoVision, rác thật do người vứt, 6 khung / 21 vật.
 Nhãn lấy bằng trừ nền rồi gộp ở mức vật.
 
 | cấu hình | bắt được | hộp thừa |
 |---|---|---|
-| model đứng riêng | 18/20 · 90% | 82 |
-| patch đứng riêng | 18/20 · 90% | 472 |
-| **patch + model** | **17/20 · 85%** | **0** |
+| model đứng riêng | 18/21 · 86% | 77 |
+| patch đứng riêng | 18/21 · 86% | 471 |
+| **patch + model** | **18/21 · 86%** | **0** |
 
 **Chuỗi CCTV sạch** — 3 video ABODA có người đi và ánh sáng đổi, không có rác.
 Phải chạy theo *chuỗi*: dựng nền từ chính khung sắp quét rồi quét lại khung đó
@@ -246,12 +266,17 @@ thì "0 báo nhầm" chỉ nói rằng không đổi thì không báo.
 | cấu hình | lượt có báo nhầm |
 |---|---|
 | model đứng riêng | 35/36 · 97% |
-| patch đứng riêng | 17/36 · 47% |
-| **patch + model** | **9/36 · 25%** |
+| patch đứng riêng | 20/36 · 56% |
+| **patch + model** | **10/36 · 28%** |
 
-Ghép mất 5% recall (90% → 85%) đổi lấy **hộp thừa về 0** và báo nhầm giảm gần
-4 lần. Ảnh: `01_model_only_eco.jpg`, `02_patch_only_eco.jpg`,
-`03_patch_plus_model_eco.jpg`, `04_clean_rejected.jpg`.
+Ghép **không mất recall nào** (cả ba đều 86%) mà đưa hộp thừa về **0** và cắt
+báo nhầm từ 97%/56% xuống 28%. Ảnh trong `test_cases/`: `01_model_only_eco.jpg`,
+`02_patch_only_eco.jpg`, `03_patch_plus_model_eco.jpg`, `04_clean_rejected.jpg`.
+
+`test_cases/model_only/` là detector chạy **một mình** trên bốn miền khác nhau,
+để thấy nó mạnh yếu ở đâu: conf tụt theo mức quen thuộc — drone 0,88 → ven đường
+0,81 → sàn gạch trong nhà 0,58 — và trên khung CCTV *không có rác* nó vẫn bắn
+vào ghế, nắp cống, thùng điện, tấm biển.
 
 ### Chạy thật trên camera EcoVision
 
@@ -279,25 +304,35 @@ Ghép mất 5% recall (90% → 85%) đổi lấy **hộp thừa về 0** và bá
 
 | chỉ số | ngưỡng | pipeline này |
 |---|---|---|
-| cảnh báo nhầm / camera / ngày | < 1–2 | **49 — KHÔNG ĐẠT** (xem lưu ý) |
-| recall theo sự kiện | càng cao càng tốt | 85% (20 vật, 1 camera trong nhà) |
-| độ trễ phát hiện | < 3 phút | **4,0 phút — KHÔNG ĐẠT** |
+| cảnh báo nhầm / camera / ngày | < 1–2 | **chưa đo đủ 24h** |
+| recall theo sự kiện | càng cao càng tốt | 86% (21 vật, 1 camera trong nhà) |
+| độ trễ phát hiện | < 3 phút | **1,5 phút ✓** |
 
-**49 FP/ngày** tính trên toàn clip, nhưng mặt nạ nhiễu mới chín ở giờ thứ 5,83
-nên 99% thời gian là giai đoạn học. Sau khi chín chỉ có 0,05h dữ liệu — quá ngắn
-để kết luận. **Cần ≥24h liên tục mới có con số thật.**
+**FP/ngày.** Lần chạy 5,9 giờ cho 49 FP/ngày nếu tính trên toàn clip, nhưng mặt
+nạ nhiễu mới chín ở giờ thứ 5,83 nên 99% thời gian là giai đoạn học. Sau khi
+chín chỉ có 0,05h dữ liệu — quá ngắn để kết luận gì. **Cần ≥24h liên tục.**
 
-**Độ trễ 4,0 phút** = `dwell 5` (2,5 phút) + `confirm 4/6` (1,5 phút) → báo ở
-lượt thứ 8. Quét đánh đổi bằng `tools/latency_sweep.py`:
+**Độ trễ: 4,0 → 1,5 phút.** Bản đầu dùng `dwell 5` + `confirm 4/6` = phải 8 lượt
+mới báo. Đó là **lỗi thiết kế, không phải đánh đổi cần thiết**: hai cổng lọc
+trùng nhau. ConfirmGate sinh ra cho mode `classifier`, nơi model chấm lại từng ô
+mỗi lượt nên điểm nhảy lung tung và cần lọc nhiễu *ngẫu nhiên*. Ở `change_only`
+thì `dwell` đã ép tính bền vững bằng bộ đếm `_run` — ô phải đổi **liên tiếp** N
+lượt. Để nguyên 4/6 chồng lên là bắt bền vững hai lần, trả giá hai lần bằng độ
+trễ. Quét bằng `tools/latency_sweep.py`:
 
-| dwell | confirm | lượt | @30s | báo nhầm |
+| dwell | confirm | lượt | @30s | báo nhầm chuỗi sạch |
 |---|---|---|---|---|
-| 5 | 4/6 | 8 | **4,0** ❗ | 1/42 |
-| **3** | **2/4** | **4** | **2,0** | **2/42** |
-| 2 | 1/2 | 2 | 1,0 | 3/42 |
+| 5 | 4/6 | 8 | 4,0 ❗ | 1/42 |
+| **3** | **1/1** | **3** | **1,5** | **1/42** |
+| 1 | 1/1 | 1 | 0,5 | 2/42 |
 
-Đánh đổi rất phẳng vì `dwell` không còn phải gánh việc dập FP một mình — tầng
-xác nhận đã làm. **Chưa đổi vì mẫu 42 lượt quá nhỏ và đo trong nhà.**
+Chờ gấp 8 lần chỉ đổi được 2/42 xuống 1/42 — mà chênh 1 với 2 trên 42 mẫu nằm
+trong nhiễu. Đã chốt **`dwell 3` + `confirm 1/1`**.
+
+Vẫn giữ `dwell 3` chứ không hạ xuống 1, vì `dwell` là lớp bảo hiểm cho những gì
+**chưa đo**: bóng nắng quét ngang, lá bay, mưa. Bỏ hẳn ngay trước khi ra ngoài
+trời là bỏ luôn lớp bảo hiểm đó. Sàn cứng còn lại là chính nhịp quét — vứt rác
+ngay sau một lượt thì phải đợi lượt sau, tức 0–30 giây nữa.
 
 ---
 
@@ -344,16 +379,32 @@ tương đối với từng camera. Cái đạt được là **lắp không cầ
 ## 6 · Hiện test như nào
 
 ```bash
+bash tools/selfcheck.sh              # kiem toan goi — chay cai nay truoc
 python3 tests/selftest.py            # ~60 case, stdlib, vài giây
 python3 tests/integration_test.py    # cần cv2
 python3 tools/run_test_cases.py      # sinh lại test_cases/
 ```
+
+`selfcheck.sh` bắt các lỗi chỉ lộ ra khi ai đó **chạy thật trên máy khác**: cú
+pháp, tool có khởi động nổi không, **đường dẫn tuyệt đối** ngoài `training/`,
+config có trỏ đúng file model không, file lạ ở thư mục gốc, và cả hai test suite.
+Nó đã bắt được hai lỗi thật lúc đóng gói.
 
 `integration_test.py` phủ: cold start · guard đổi sáng (vật to, người che) ·
 chốt một lần và mở chốt · chốt lại nền · **bù rung hai chiều** (lệch trên vùng
 chết phải nắn, lệch dưới vùng chết phải để yên).
 
 `run_test_cases.py` sinh lại toàn bộ `test_cases/` — chạy lại là ra đúng số trên.
+
+### Ba lỗi mà chính bộ test bắt được
+
+Cả ba đều nằm ở chỗ đã tự tin là xong, và không cái nào lộ ra khi đọc lại code.
+
+- **Bù méo làm hỏng chính thứ nó sinh ra để sửa** (§Cơ chế an toàn). ECC ước
+  lượng từ toàn khung kể cả vật mới, nên vật mới làm lệch phép ước lượng. Cộng
+  thêm vùng chết viết sai logic (`AND` giữa hai điều kiện) nên nó **luôn nắn**.
+- **`scans.csv` không flush** — mất 6 phút cuối của lần chạy 5,9 giờ khi máy ngủ.
+- **`dwell` + `ConfirmGate` lọc trùng** — 4,0 phút độ trễ, một nửa là thừa.
 
 ### Chín cái bẫy đo đạc đã dính
 
@@ -402,6 +453,8 @@ tools/shift_test.py      đo ngưỡng chịu lệch của camera + vùng
 tools/standing_test.py   người đứng yên có bị báo không
 tools/measure_px.py      đo cỡ vật theo px để chọn cell_px
 tools/calibrate.py       dò ngưỡng litter_thr cho mode classifier
+tools/keepalive.sh       chạy shadow liên tục, tự bật lại nếu chết
+tools/selfcheck.sh       kiểm gói trước khi bàn giao (cú pháp, đường dẫn, test)
 
 tests/selftest.py         ~60 case, stdlib, không cần cv2
 tests/integration_test.py cần cv2
