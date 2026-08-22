@@ -279,6 +279,44 @@ báo nhầm từ 42%/56% xuống **0%**. Ảnh trong `test_cases/`: `01_model_on
 0,81 → sàn gạch trong nhà 0,58 — và trên khung CCTV *không có rác* nó vẫn bắn
 vào ghế, nắp cống, thùng điện, tấm biển.
 
+### Đo trên nhiều bộ rác khác — có cần train thêm không
+
+Chi tiết: [`test_cases/12_danh_gia_nhieu_bo_du_lieu.md`](test_cases/12_danh_gia_nhieu_bo_du_lieu.md).
+Chấm ở conf 0,20 — đúng điểm làm việc của tầng xác nhận.
+
+| | ĐÃ TRAIN | VAL chia theo clip | CHƯA HỀ THẤY |
+|---|---|---|---|
+| TACO | 56,5% | **67,4%** | |
+| RoLID | 70,3% | **80,6%** | |
+| UAVVaste | 70,2% | 64,4% | |
+| Wade | 59,5% | **65,3%** | |
+| GINI (bãi rác) | | | 65,0% |
+| Wade bãi rác (bị loại khỏi train) | | | 67,5% |
+
+**Val cao hơn train trên gần hết các bộ** — dấu hiệu ngược của overfit. Bộ chưa
+hề thấy rơi đúng vào dải của val. Chuyển miền không phải chỗ hỏng.
+
+Chỗ hỏng thật nằm ở **cỡ vật** (`tools/recall_by_size.py`, 373 vật):
+
+| cạnh vật | 0–12px | 12–20 | 20–32 | 32–48 | 48–80 | >80 |
+|---|---|---|---|---|---|---|
+| recall | **28,1%** | 69,2% | 66,7% | 75,0% | 63,4% | 83,3% |
+
+Vực dốc dưới 12px, rồi phẳng 63–75% suốt 12–80px. Đây là **thiếu pixel, không
+phải thiếu dữ liệu** — gán thêm nhãn cho vật 8px không dạy được thứ không có
+trong ảnh. Suy ra ràng buộc lắp đặt: **chai phải ≥ 20px trong khung** (ước lượng:
+ống 2,8mm ≤ 13m, ống 4mm ≤ 18m).
+
+Kết luận: **train thêm trên dữ liệu công khai không đáng.** Hai đòn bẩy còn lại là
+ảnh âm từ chính hiện trường (chân ghế, bóng nắng, sỏi — model bắn vì kết cấu bề
+mặt) và ràng buộc khoảng cách ở trên.
+
+Một cảnh báo về cách đọc bảng: cột "hộp thừa" trong file chi tiết **không** phải
+số báo nhầm của pipeline. GINI chỉ gán một hộp phủ một phần đống rác nên hộp
+trúng rác thật ngoài khung nhãn vẫn bị tính là thừa, và bảng đó chạy model trên
+**toàn ảnh** chứ không phải trên vùng 320px mà cổng đổi chỉ ra. Kiểm bằng mắt ở
+`test_cases/11_hop_thua_that_hay_gia.jpg`.
+
 ### Chạy thật trên camera EcoVision
 
 5,88 giờ · 697 lượt · nhịp 30s · vùng 225 ô bao cả bàn ghế:
@@ -466,6 +504,8 @@ tools/measure_px.py      đo cỡ vật theo px để chọn cell_px
 tools/calibrate.py       dò ngưỡng litter_thr cho mode classifier
 tools/bench_models.py    so nhiều model rác bằng cùng một thước đo
 tools/bench_sweep.py     quét ngưỡng, so ở điểm làm việc tương đương
+training/tools/eval_datasets.py   recall tách ĐÃ TRAIN / VAL / CHƯA HỀ THẤY
+training/tools/recall_by_size.py  recall theo cỡ vật — vực dốc dưới 12px
 tools/keepalive.sh       chạy shadow liên tục, tự bật lại nếu chết
 tools/selfcheck.sh       kiểm gói trước khi bàn giao (cú pháp, đường dẫn, test)
 
