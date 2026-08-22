@@ -1,0 +1,89 @@
+# Shadow mode BAN NGAY, change_only, vung da thu hep. Nhip that 30s.
+scan:
+  interval_s: 30
+
+grid:
+  cell_px: 48
+  overlap: 0.5
+  occlusion_thr: 0.3
+  occlusion_pad_px: 48       # noi rong: quang quanh nguoi la nguon nhieu chinh
+
+change:
+  enabled: true
+  thr: 6.0
+  alpha: 0.05
+  # Ba dieu kien PHAI DU CA BA thi moi coi la doi sang toan cuc:
+  global_change_frac: 0.45         # >=45% o (da co nen) cung doi
+  global_change_spread: 0.8        # trai >=80% so hang LAN cot
+                                   # (vat chiem 24% dt vung chi trai 0.60)
+  global_change_min_visible: 0.6   # con nhin thay >=60% luoi
+                                   # (nguoi che 203/227 o -> 24 o con lai cung doi
+                                   #  la du bat guard va xoa sach nen)
+
+# Bu rung camera: nan khung ve moc bang ECC (dich + xoay) truoc khi cat o.
+# Do tren CCTV ngoai troi that (ABODA video2): lech 2px -> 86% so o "doi",
+# xoay 0,5 do -> 58%. Cong dich khung (12px) va guard toan cuc nuot phan lon,
+# nhung ho dung dai 1px / 0,2-0,5 do -> lot 1 canh bao nham.
+# Nang hon: tren video8, cu hich 2px + 0,3 do giua chung lam MAT LUON tui rac
+# that (bat duoc 1/1 -> 0/1) vi guard toan cuc nap lai nen lien tuc.
+# Bat len thi ca hai bien mat, camera dung yen thi la no-op (vung chet 0,15px).
+# Gia do tren 1920x1080: ds2 = 54-72ms, ds4 = 11-13ms, ds8 = 5-7ms. Ca ba deu
+# lay lai goc xoay chinh xac nhu nhau (0,300 do -> do duoc 0,319), nen lay ds4.
+# 11ms moi 30 giay -- khong dang ke.
+stabilize:
+  enabled: true
+  downscale: 4
+  # VUNG CHET — duoi muc nay thi KHONG nan. Bat buoc phai co: ECC uoc luong tu
+  # TOAN khung ke ca vat moi xuat hien, nen vat moi lam lech chinh phep uoc
+  # luong. Do tren khung eco (khong camera nao dich): ECC bao 1,35px, nan theo
+  # do lam o doi tang 82 -> 158/360. Nan 1px chi sua duoc 1px lech nhung noi
+  # suy lam nhoe TOAN khung, ma nhoe chinh la thu cong doi nhin thay.
+  # Quet vung chet: 3,0px la cua so duy nhat vua giet duoc phep nan gia 1,35px
+  # (158 -> 82) vua cuu duoc lech that 4px (245 -> 0). <3px thi hai, >5px mat
+  # tac dung.
+  min_px: 3.0
+  max_px: 40                 # lon hon = camera bi xoay that, de cong dich khung lo
+  max_deg: 3.0
+
+decide:
+  mode: change_only
+  dwell_scans: 5             # 5 x 30s = 2.5 phut
+  min_hot_cells: 2
+
+# Tang XAC NHAN: detector phan lai cac o nong do cong doi chi ra.
+# Do tren chuoi 30 luot CCTV sach (co nguoi di, anh sang doi):
+#   chi cong doi   67% so luot co bao
+#   chi detector   93% so luot co bao
+#   ghep hai tang  37% so luot co bao   -- recall khung eco giu nguyen 75%
+# Hai tang sai o CHO KHAC NHAU: cong doi ban vi nguoi va anh sang, detector ban
+# vi ket cau be mat. Sau luot bi bac bo khi soi bang mat deu la NGUOI DANG DI.
+# Re nua: gop xong con ~1 vung/luot thay vi 9-12 o quet toan vung.
+#
+# Danh doi phai biet: detector chi dat 75% tren khung eco, nen no se vut di mot
+# phan vat ma cong doi bat dung. Muon uu tien khong bo sot thi enabled: false.
+verify:
+  enabled: true
+  weights: models/trash_yolo11n.pt   # tuong doi voi THU MUC GOC — chay lenh tu day
+  conf: 0.10
+  cluster_gap: 1
+  pad_px: 48
+  max_side_px: 256       # vung cang to thi vat cang nho so voi anh dua vao model
+  min_side_px: 160
+  upscale: 2.0           # PHAI trung upscale luc train (o 320 phong 2x -> 640)
+  max_regions: 8
+
+confirm: {n: 4, m: 6}        # cua so 3 phut
+alert:
+  mode: latch                # bao MOT LAN roi im; xe do 5h chi 1 canh bao
+  rearm_scans: 4             # sach 4 luot lien tiep -> mo chot
+  merge_radius_cells: 2      # o nong sat o da chot = cung vat, khong bao lai
+  cooldown_s: 1800           # chi dung khi mode=cooldown
+
+clutter:
+  enabled: true
+  mute_after_scans: 600      # ~5h o nhip 30s
+  mute_ratio: 0.95
+  unmute_after_clean: 10
+
+scene_shift: {thr_px: 12.0}
+scorer: {kind: constant, value: 0.0}
