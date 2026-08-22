@@ -68,10 +68,19 @@ decide:
 verify:
   enabled: true
   weights: models/trash_yolo11n.pt   # tuong doi voi THU MUC GOC — chay lenh tu day
-  conf: 0.10
+  # 0,20 chu khong phai 0,10: do o CO VUNG 320. Doc bang quet, dung suy tu
+  # so do duoc khi chay model dung rieng — hai ben dua vao model hai loai anh
+  # khac nhau nen nguong khong chuyen duoc.
+  conf: 0.20
   cluster_gap: 1
   pad_px: 48
-  max_side_px: 256       # vung cang to thi vat cang nho so voi anh dua vao model
+  # 320 x upscale 2 = 640px, DUNG bang anh model duoc train. Ban dau dat 256 voi
+  # ly luan "vung cang to thi vat cang nho so voi anh" — nghe hop ly nhung SAI:
+  # no pha mat su khop thang ma ca vong lam du lieu sinh ra de dat duoc.
+  # Do duoc: 256 -> 320 keo bao nham tren chuoi sach tu 28% xuong 6%, roi
+  # conf 0,20 dua ve 0% — recall van nguyen 86%.
+  # Khong ha xuong 192: crop qua chat, mat boi canh, recall sap con 48%.
+  max_side_px: 320
   min_side_px: 160
   upscale: 2.0           # PHAI trung upscale luc train (o 320 phong 2x -> 640)
   max_regions: 8

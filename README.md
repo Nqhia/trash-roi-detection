@@ -23,7 +23,8 @@ khung → │ cổng đổi nền     │→ │ gộp ô     │→ │ detecto
 nhưng không biết *cái gì*; detector biết cái gì nhưng không biết cảnh này bình
 thường ra sao. Hai bên sai ở chỗ khác nhau — cổng đổi bắn vì người đi qua và
 ánh sáng đổi, detector bắn vì kết cấu bề mặt — nên giao của chúng nhỏ hơn hẳn
-từng bên. Đo được: **97% → 25%** số lượt báo nhầm, recall giữ nguyên.
+từng bên. Đo được: báo nhầm trên chuỗi CCTV sạch **42% (model) và 56% (patch)
+tụt về 0% khi ghép**, recall giữ nguyên 86%.
 
 ### Tầng 1 · cổng đổi nền — `core/reference.py`
 
@@ -255,9 +256,9 @@ Nhãn lấy bằng trừ nền rồi gộp ở mức vật.
 
 | cấu hình | bắt được | hộp thừa |
 |---|---|---|
-| model đứng riêng | 18/21 · 86% | 77 |
+| model đứng riêng | 18/21 · 86% | 59 |
 | patch đứng riêng | 18/21 · 86% | 471 |
-| **patch + model** | **18/21 · 86%** | **0** |
+| **patch + model** | **18/21 · 86%** | **3** |
 
 **Chuỗi CCTV sạch** — 3 video ABODA có người đi và ánh sáng đổi, không có rác.
 Phải chạy theo *chuỗi*: dựng nền từ chính khung sắp quét rồi quét lại khung đó
@@ -265,12 +266,12 @@ thì "0 báo nhầm" chỉ nói rằng không đổi thì không báo.
 
 | cấu hình | lượt có báo nhầm |
 |---|---|
-| model đứng riêng | 35/36 · 97% |
+| model đứng riêng | 15/36 · 42% |
 | patch đứng riêng | 20/36 · 56% |
-| **patch + model** | **10/36 · 28%** |
+| **patch + model** | **0/36 · 0%** |
 
-Ghép **không mất recall nào** (cả ba đều 86%) mà đưa hộp thừa về **0** và cắt
-báo nhầm từ 97%/56% xuống 28%. Ảnh trong `test_cases/`: `01_model_only_eco.jpg`,
+Ghép **không mất recall nào** (cả ba đều 86%) mà đưa hộp thừa từ 59 xuống **3** và cắt
+báo nhầm từ 42%/56% xuống **0%**. Ảnh trong `test_cases/`: `01_model_only_eco.jpg`,
 `02_patch_only_eco.jpg`, `03_patch_plus_model_eco.jpg`, `04_clean_rejected.jpg`.
 
 `test_cases/model_only/` là detector chạy **một mình** trên bốn miền khác nhau,
@@ -464,6 +465,7 @@ tools/standing_test.py   người đứng yên có bị báo không
 tools/measure_px.py      đo cỡ vật theo px để chọn cell_px
 tools/calibrate.py       dò ngưỡng litter_thr cho mode classifier
 tools/bench_models.py    so nhiều model rác bằng cùng một thước đo
+tools/bench_sweep.py     quét ngưỡng, so ở điểm làm việc tương đương
 tools/keepalive.sh       chạy shadow liên tục, tự bật lại nếu chết
 tools/selfcheck.sh       kiểm gói trước khi bàn giao (cú pháp, đường dẫn, test)
 
@@ -475,3 +477,35 @@ config/day_cfg.yaml       cấu hình đang chạy thật
 test_cases/               kết quả bộ test + ảnh
 training/                 dựng bộ dữ liệu + train lại + soát dữ liệu
 ```
+
+### Hiệu chỉnh tầng xác nhận — `tools/bench_sweep.py`
+
+Ngưỡng tối ưu đo trên model **đứng riêng không chuyển được** sang tầng xác nhận,
+vì hai bên đưa vào model hai loại ảnh khác nhau: đứng riêng thì cắt ô 320px
+phóng 2× (640px), còn tầng xác nhận cắt vùng quanh cụm ô nóng. Đo được:
+
+| verify.conf (vùng 256) | model đứng riêng | **ghép** |
+|---|---|---|
+| 0,10 | 86% | **86%** |
+| 0,20 | 86% | **29%** |
+| 0,30 | 86% | **0%** |
+
+Ở conf 0,30 model đứng riêng vẫn 86% mà ghép sập về 0. **Phải hiệu chỉnh tầng
+xác nhận bằng chính bộ test của pipeline, không suy từ số của model.**
+
+Quét cả hai tham số cùng lúc:
+
+| vùng | conf | eco | hộp thừa | chuỗi sạch |
+|---|---|---|---|---|
+| 256 | 0,10 | 86% | 0 | 28% |
+| 320 | 0,10 | 86% | 3 | 6% |
+| **320** | **0,20** | **86%** | **3** | **0%** |
+| 192 | 0,10 | **48%** ✗ | 0 | 25% |
+| 320 | 0,30 | **38%** ✗ | 0 | 0% |
+
+`max_side_px: 320` × `upscale 2` = **640px, đúng bằng ảnh model được train**.
+Bản đầu đặt 256 với lý luận "vùng càng to thì vật càng nhỏ so với ảnh" — nghe
+hợp lý nhưng phá mất sự khớp thang mà cả vòng làm dữ liệu sinh ra để đạt được.
+
+Hai vách phải tránh: **vùng 192** crop quá chặt, mất bối cảnh, recall sập 48%;
+**conf 0,30** sập 38%. Điểm 320/0,20 có biên cả hai phía.

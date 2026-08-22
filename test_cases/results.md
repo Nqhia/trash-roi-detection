@@ -2,7 +2,7 @@
 
 Sinh bởi `python3 tools/run_test_cases.py` — chạy lại là ra đúng số này.
 
-Model: `models/trash_yolo11n.pt` · conf 0.1 · ô 320px phóng 2.0×
+Model: `models/trash_yolo11n.pt` · conf 0.2 · ô 320px phóng 2.0×
 Mặt nạ nhiễu TẮT trong mọi ca (cần ~5 giờ mới chín, không đo được ở đây).
 
 ## Khung eco — rác thật do người vứt
@@ -11,9 +11,9 @@ Mặt nạ nhiễu TẮT trong mọi ca (cần ~5 giờ mới chín, không đo 
 
 | cấu hình | bắt được | hộp thừa |
 |---|---|---|
-| model đứng riêng | 18/21 · 86% | 77 |
+| model đứng riêng | 18/21 · 86% | 59 |
 | patch đứng riêng | 18/21 · 86% | 471 |
-| **patch + model** | 18/21 · 86% | 0 |
+| **patch + model** | 18/21 · 86% | 3 |
 
 ## Chuỗi CCTV sạch — không có rác
 
@@ -21,6 +21,6 @@ Mặt nạ nhiễu TẮT trong mọi ca (cần ~5 giờ mới chín, không đo 
 
 | cấu hình | lượt có báo nhầm |
 |---|---|
-| model đứng riêng | 35/36 · 97% |
+| model đứng riêng | 15/36 · 42% |
 | patch đứng riêng | 20/36 · 56% |
-| **patch + model** | **10/36 · 28%** |
+| **patch + model** | **0/36 · 0%** |
