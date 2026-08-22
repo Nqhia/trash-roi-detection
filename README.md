@@ -342,14 +342,24 @@ ngay sau một lượt thì phải đợi lượt sau, tức 0–30 giây nữa.
 pha xe ban đêm. Bài toán là rác đường phố mà **chưa có một phép đo nào trên
 camera cố định ngoài trời**.
 
-**Model mù với chai trong suốt trên nền sáng.** Bắt được tờ giấy nhàu (conf
-0,58) và nhựa màu (0,34) nhưng chai nhựa trong suốt trên gạch trắng thì **không
-thấy ở bất kỳ ngưỡng nào** — hạ xuống conf 0,02 chỉ đẻ thêm hộp rác. TACO có 285
-nhãn `Clear plastic bottle` nhưng toàn trên cỏ và nhựa đường, nơi chai có viền
-tối rõ. Đây là vật bạn nêu làm mốc nhỏ nhất.
-
 **Không có ảnh CCTV cố định nào trong 26k ảnh train.** Conf tụt theo độ quen:
-drone 0,88 → ven đường 0,81 → sàn gạch trong nhà 0,58.
+drone 0,88 → ven đường 0,81 → sàn gạch trong nhà 0,58. Đây là lý do chính nên
+thu vài trăm ảnh rác **trên chính camera sẽ deploy** rồi finetune — tiền lệ đo
+được ở nhánh classifier: 300 ô âm tại chỗ đưa FP 7,12 → **0,00**/lượt, còn ô âm
+cảnh khác chỉ 2,88 → 2,00.
+
+**Đã so với 4 model rác công khai** (`tools/bench_models.py`), không cái nào
+thay được. Đọc phải xem **cả hai cột**, chỉ nhìn recall là bị lừa:
+
+| model | bắt được | hộp thừa | hộp/khung sạch |
+|---|---|---|---|
+| **của mình** | 18/20 · 90% | **4** | **1,0** |
+| sharktide/waste-detection | 20/20 · 100% | 98 | 3,8 |
+| turhancan97/yolov8-segment | 18/20 · 90% | 47 | 6,0 |
+| esapzoi/litter-detection | 3/20 · 15% | 73 | 9,2 |
+
+`sharktide` đạt 100% bằng cách rải 118 hộp lên 6 khung chứa 20 vật. Ba bộ kia
+đều không có mẫu âm trong lúc train — nhiều khả năng đó là chỗ khác biệt.
 
 **Lỗ recall tự động.** `scene_shift ≥ thr_px` → xoá nền → lượt sau mọi ô chưa có
 nền **tự chốt hiện trạng làm nền**. Rác đang nằm trong vùng lúc đó thành bình
@@ -453,6 +463,7 @@ tools/shift_test.py      đo ngưỡng chịu lệch của camera + vùng
 tools/standing_test.py   người đứng yên có bị báo không
 tools/measure_px.py      đo cỡ vật theo px để chọn cell_px
 tools/calibrate.py       dò ngưỡng litter_thr cho mode classifier
+tools/bench_models.py    so nhiều model rác bằng cùng một thước đo
 tools/keepalive.sh       chạy shadow liên tục, tự bật lại nếu chết
 tools/selfcheck.sh       kiểm gói trước khi bàn giao (cú pháp, đường dẫn, test)
 
