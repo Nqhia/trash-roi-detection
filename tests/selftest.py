@@ -263,10 +263,45 @@ def test_clutter_persist() -> None:
         eq("file hỏng -> mặt nạ rỗng", broken.muted(), [])
 
 
+def test_trash_consumer() -> None:
+    """Bộ khung cắm vào worker — chỉ kiểm HÌNH DẠNG, không cần worker có mặt.
+
+    Cái này bắt được lỗi kiểu "đổi tên trường trong ScanResult xong quên sửa
+    adapter": lỗi đó chỉ lộ ra lúc chạy trong worker thật, tức là muộn nhất
+    có thể.
+    """
+    import importlib.util
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(root, "integration", "trash_consumer.py")
+    if not os.path.exists(path):
+        eq("adapter worker có mặt", False, True)
+        return
+    spec = importlib.util.spec_from_file_location("trash_consumer", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["trash_consumer"] = mod
+    spec.loader.exec_module(mod)
+    C = mod.TrashConsumer
+    # Contract detect/base.py §3: thiếu thuộc tính nào là engine không nạp nổi.
+    for attr in ("name", "labels", "source", "roi_mode", "distinct_frames",
+                 "cost_class", "max_objects", "runtime_key"):
+        eq(f"adapter có `{attr}`", hasattr(C, attr), True)
+    eq("adapter KHÔNG khai requires", hasattr(C, "requires"), False)
+    c = C()
+    eq("nhịp lấy từ config", c.interval_s(), 30.0)
+    eq("camera chưa bật -> tắt", c.camera_on({}), False)
+    eq("camera bật cờ -> chạy", c.camera_on({"trash_enabled": True}), True)
+
+    class _Ctx:
+        roi = None
+        t = 0.0
+    eq("không vẽ vùng -> không báo gì", c.detect(_Ctx()), [])
+    c.on_camera_removed("khong-co")          # không được ném
+
+
 def main() -> int:
     for fn in (test_grid, test_point_in_polygon, test_occlusion,
                test_confirm_gate, test_dedup_gate, test_clutter,
-               test_clutter_persist):
+               test_clutter_persist, test_trash_consumer):
         fn()
     print()
     if _fails:

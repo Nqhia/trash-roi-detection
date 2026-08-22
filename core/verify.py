@@ -119,12 +119,71 @@ class RegionVerifier:
                 boxes.append((ox + bx[0] / s, oy + bx[1] / s,
                               ox + bx[2] / s, oy + bx[3] / s))
 
-        # Ô được xác nhận = ô có giao với ít nhất một hộp phát hiện.
-        keep = []
+        return self._keep(cells, boxes), boxes
+
+    @staticmethod
+    def _keep(cells: list, boxes: list) -> list:
+        """Ô được xác nhận = ô có giao với ít nhất một hộp phát hiện."""
+        out = []
         for c in cells:
             for bx in boxes:
                 if (c.x1 < bx[2] and c.x2 > bx[0]
                         and c.y1 < bx[3] and c.y2 > bx[1]):
-                    keep.append(c)
+                    out.append(c)
                     break
-        return keep, boxes
+        return out
+
+    def sweep(self, frame: np.ndarray, cells: list, max_tiles: int = 24) -> tuple:
+        """Quét detector KHẮP vùng, không cần ô nóng dẫn đường.
+
+        Dùng sau khi nền bị vứt: lúc đó cổng đổi mù (không còn cái gì để so),
+        nên detector là thứ duy nhất nhìn thấy vật đã nằm sẵn trong vùng.
+
+        Không dùng lại `verify()` được: nó gom ô kề nhau thành MỘT cụm rồi cắt
+        một vùng `max_side`, đưa cả vùng giám sát vào thì nó chỉ soi đúng một
+        mảnh 320px ở giữa. Chỗ này lát toàn vùng thành ô `max_side` chồng nhau
+        50% — đúng cách dữ liệu train được cắt.
+        """
+        import cv2
+
+        if not cells:
+            return [], []
+        h, w = frame.shape[:2]
+        x1 = int(max(0, min(c.x1 for c in cells) - self.pad))
+        y1 = int(max(0, min(c.y1 for c in cells) - self.pad))
+        x2 = int(min(w, max(c.x2 for c in cells) + self.pad))
+        y2 = int(min(h, max(c.y2 for c in cells) + self.pad))
+        side, step = self.max_side, max(1, self.max_side // 2)
+        xs = list(range(x1, max(x1 + 1, x2 - side + 1), step))
+        ys = list(range(y1, max(y1 + 1, y2 - side + 1), step))
+        if xs[-1] + side < x2:
+            xs.append(max(x1, x2 - side))
+        if ys[-1] + side < y2:
+            ys.append(max(y1, y2 - side))
+        tiles = [(x, y) for y in ys for x in xs]
+        if len(tiles) > max_tiles:
+            # Vùng quá to so với trần: giãn thưa ra thay vì cắt cụt một nửa vùng,
+            # thà thưa đều còn hơn mù hẳn phần dưới.
+            k = (len(tiles) + max_tiles - 1) // max_tiles
+            tiles = tiles[::k][:max_tiles]
+
+        crops, offs = [], []
+        for (tx, ty) in tiles:
+            c = frame[ty:min(h, ty + side), tx:min(w, tx + side)]
+            if c.size == 0:
+                continue
+            s = (self.max_side * self.upscale) / max(c.shape[:2])
+            crops.append(cv2.resize(c, None, fx=s, fy=s,
+                                    interpolation=cv2.INTER_CUBIC))
+            offs.append((tx, ty, s))
+        if not crops:
+            return [], []
+
+        boxes = []
+        for (ox, oy, s), r in zip(offs, self._model().predict(
+                crops, conf=self.conf, verbose=False)):
+            for b in r.boxes:
+                bx = b.xyxy[0].tolist()
+                boxes.append((ox + bx[0] / s, oy + bx[1] / s,
+                              ox + bx[2] / s, oy + bx[3] / s))
+        return self._keep(cells, boxes), boxes

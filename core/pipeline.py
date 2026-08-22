@@ -21,6 +21,7 @@ import os
 import time
 from dataclasses import dataclass, field
 
+import cv2
 import numpy as np
 
 from .clutter import ClutterMask
@@ -52,6 +53,9 @@ class ScanResult:
     scene_shift_px: float = 0.0
     stab_px: float = 0.0           # độ lệch đã BÙ được ở lượt này
     stab_deg: float = 0.0
+    stab_ok: bool = False          # nắn được về mốc -> nền cũ VẪN DÙNG ĐƯỢC
+    ref_reset: bool = False        # đã vứt nền lượt này (camera bị chỉnh hướng)
+    n_sweep_hot: int = 0           # ô do quét detector sau reset tìm ra
     mask_progress: float = 0.0
     global_change: bool = False    # đổi sáng toàn cục -> đã nạp lại nền, bỏ lượt
     rearmed: bool = False          # vùng sạch trở lại -> mở chốt, sẵn sàng báo tiếp
@@ -128,6 +132,9 @@ class ZoneTrashDetector:
         # còn ô có vật giữ 10-15 lượt. dwell=5 loại sạch người mà không mất vật.
         self.dwell = int(d.get("dwell_scans", 5))
         self._run: dict = {}
+        # Quét detector khắp vùng trong `dwell` lượt sau khi nền bị vứt.
+        self._resweep = 0
+        self._sweep_run: dict = {}
 
         cf = cfg.get("confirm", {})
         self.n = int(cf.get("n", 4))
@@ -178,7 +185,12 @@ class ZoneTrashDetector:
 
         self.stab_max_deg = float(s.get("max_deg", 3.0))
         self.stab_iters = int(s.get("iters", 60))
-        self._stab_ref: np.ndarray | None = None
+        self._stab_gray: np.ndarray | None = None   # ảnh xám mốc, ĐỘ PHÂN GIẢI GỐC
+        # Lệch lớn hơn mức này thì ước lượng lại ở downscale mịn hơn:
+        # ECC ở ds4 chỉ chính xác cỡ 1px ảnh thu nhỏ = 4px ảnh gốc, mà 2px
+        # đã đủ làm 86% số ô "đổi". Đo được: hích 30px, bù ở ds4 xong vẫn
+        # còn 179/360 ô đổi -> guard bắn -> mù cả vùng.
+        self.stab_fine_px = float(s.get("fine_px", 8.0))
 
         # Tầng xác nhận bằng detector. Xem core/verify.py để biết vì sao nó nằm
         # ở đây chứ không nằm trong scorers.py.
@@ -289,17 +301,30 @@ class ZoneTrashDetector:
         Nắn đại một phép biến đổi sai còn tệ hơn không nắn.
         """
         ds = self.stab_ds
-        small = gray_small(frame, ds)
-        if self._stab_ref is None or self._stab_ref.shape != small.shape:
-            self._stab_ref = small
+        if (self._stab_gray is None
+                or self._stab_gray.shape[:2] != frame.shape[:2]):
+            self._stab_gray = (frame if frame.ndim == 2
+                               else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
             return frame
-        est = estimate_warp(self._stab_ref, small, self.stab_iters)
+        est = estimate_warp(gray_small(self._stab_gray, ds),
+                            gray_small(frame, ds), self.stab_iters)
         if est is None:
             return frame
         dx, dy, deg, W = est
         d = ((dx * ds) ** 2 + (dy * ds) ** 2) ** 0.5
         if d > self.stab_max_px or abs(deg) > self.stab_max_deg:
             return frame
+        # Lệch lớn: ước lượng lại ở mức mịn hơn. Bước thô chỉ để BIẾT có đáng nắn
+        # không; nắn thì phải nắn theo số chính xác, dư 4px là guard bắn.
+        if d >= self.stab_fine_px and ds > 1:
+            fds = max(1, ds // 2)
+            est2 = estimate_warp(gray_small(self._stab_gray, fds),
+                                 gray_small(frame, fds), self.stab_iters)
+            if est2 is not None:
+                dx2, dy2, deg2, W2 = est2
+                d2 = ((dx2 * fds) ** 2 + (dy2 * fds) ** 2) ** 0.5
+                if d2 <= self.stab_max_px and abs(deg2) <= self.stab_max_deg:
+                    ds, dx, dy, deg, W, d = fds, dx2, dy2, deg2, W2, d2
         res.stab_px, res.stab_deg = d, deg
         # Dưới ngưỡng này thì nội suy chỉ làm ảnh nhoè thêm mà chẳng bù được gì —
         # mà nhoè lại chính là thứ cổng đổi nhìn thấy.
@@ -311,8 +336,58 @@ class ZoneTrashDetector:
         half_diag = (w0 * w0 + h0 * h0) ** 0.5 / 2.0
         max_disp = d + abs(np.sin(np.radians(deg))) * half_diag
         if max_disp < self.stab_min_px:
+            res.stab_ok = True     # đã trùng mốc sẵn — cũng là "nền còn dùng được"
             return frame
+        res.stab_ok = True
         return apply_warp(frame, W, ds)
+
+    def _arm_resweep(self) -> None:
+        """Bật chế độ quét lại sau khi nền bị vứt."""
+        self._resweep = max(1, self.dwell)
+        self._sweep_run.clear()
+
+    def _post_reset_sweep(self, res: "ScanResult", frame: np.ndarray,
+                          live: list) -> None:
+        """Vứt nền xong thì cổng đổi MÙ — chỉ detector còn nhìn thấy vật có sẵn.
+
+        Lỗ này trước đây im lặng hoàn toàn: nền bị vứt (camera bị hích, hoặc vận
+        hành bấm chốt lại nền) đúng lúc trong vùng đang có rác, thì lượt sau mọi
+        ô tự chốt hiện trạng làm nền — rác thành bình thường, KHÔNG BAO GIỜ báo
+        và không log gì. Đo được:
+
+            camera bi hich 30px trong luc co rac -> sau 15 luot: nong=0
+
+        Cổng đổi không tự cứu được vì nó cần một cái nền để so, mà nền vừa bị
+        vứt. Detector thì không cần nền. Nên trong `dwell` lượt sau khi vứt, quét
+        detector khắp vùng và đòi ĐÚNG cùng điều kiện bền vững như cổng đổi:
+        thấy liên tiếp `dwell` lượt mới tính. Người đứng lại vài giây không qua
+        được, túi rác bỏ lại thì qua.
+
+        Chỉ chạy sau reset nên không đụng gì tới đường chạy thường — số báo nhầm
+        trên chuỗi sạch giữ nguyên.
+        """
+        if self._resweep <= 0 or self.verifier is None or not self.verifier.enabled:
+            return
+        self._resweep -= 1
+        try:
+            keep, boxes = self.verifier.sweep(frame, live)
+        except Exception as e:                       # noqa: BLE001
+            logger.warning("[%s] quét lại sau reset lỗi: %s", self.label, e)
+            return
+        seen = {c.id for c in keep}
+        for c in live:
+            self._sweep_run[c.id] = (self._sweep_run.get(c.id, 0) + 1
+                                     if c.id in seen else 0)
+        hot_ids = {c.id for c in res.hot}
+        add = [c for c in live
+               if self._sweep_run.get(c.id, 0) >= self.dwell and c.id not in hot_ids]
+        if not add:
+            return
+        res.hot.extend(add)
+        res.n_sweep_hot = len(add)
+        res.verify_boxes = list(res.verify_boxes) + list(boxes)
+        logger.warning("[%s] quét sau reset: %d ô có vật nằm sẵn từ trước",
+                       self.label, len(add))
 
     def _run_verify(self, res: "ScanResult", frame: np.ndarray) -> None:
         """Cho detector phán lại các ô nóng. Không bật thì không làm gì."""
@@ -345,8 +420,9 @@ class ZoneTrashDetector:
         self._run.clear()
         self._latched_cells.clear()
         self._clean_run = 0
-        self._stab_ref = None      # mốc bù méo phải cùng thời điểm với nền
+        self._stab_gray = None     # mốc bù méo phải cùng thời điểm với nền
         self.confirm.clear(self.key)
+        self._arm_resweep()        # có thể đang chốt lại nền LÚC CÓ RÁC
         if not keep_clutter and self.clutter is not None:
             self.clutter.reset()
         logger.info("[%s] CHỐT LẠI NỀN theo yêu cầu (giữ mặt nạ=%s)",
@@ -373,25 +449,34 @@ class ZoneTrashDetector:
         if not grid.cells:
             return res
 
-        # 0) Camera bị xoay/va chạm -> mọi ID ô lệch, state cũ chỉ sai chỗ.
+        # 0) Nắn về mốc TRƯỚC KHI quyết định vứt nền. Thứ tự này quan trọng:
+        #    `_stabilize` bù được tới `stab.max_px` (40px) còn `scene_shift.thr_px`
+        #    mới có 12px. Bản cũ xét vứt nền trước nên mọi cú hích 12-40px đều
+        #    thổi bay nền dù nắn lại được thừa sức — và vứt nền lúc trong vùng
+        #    ĐANG CÓ RÁC thì rác đó thành nền, im vĩnh viễn.
+        #    Nắn cũng lo luôn rung nhỏ (gió, xe tải chạy qua, giãn nở nhiệt) mà
+        #    cổng dưới không chặn: 2px đã đủ làm 86% số ô "đổi".
         thumb = make_thumb(frame)
         res.scene_shift_px = scene_shift(self._thumb, thumb, w)
         self._thumb = thumb
-        if res.scene_shift_px >= self.shift_thr:
-            logger.warning("[%s] khung dịch %.1fpx -> reset tham chiếu + mặt nạ",
-                           self.label, res.scene_shift_px)
+        if self.stab_on:
+            frame = self._stabilize(frame, res)
+
+        # 0b) Nắn không cứu nổi -> camera bị chỉnh hướng thật, mọi ID ô lệch,
+        #     state cũ chỉ sai chỗ. Lúc này mới được vứt.
+        if res.scene_shift_px >= self.shift_thr and not res.stab_ok:
+            logger.warning("[%s] khung dịch %.1fpx, nắn không cứu được -> "
+                           "reset tham chiếu + mặt nạ", self.label,
+                           res.scene_shift_px)
             self.ref.reset()
             if self.clutter is not None:
                 self.clutter.reset()
             self._run.clear()
-            self._stab_ref = None
+            self._stab_gray = None
             self.confirm.clear(self.key)
+            res.ref_reset = True
+            self._arm_resweep()
             return res
-
-        # 0b) Rung nhỏ (gió, xe tải chạy qua, giãn nở nhiệt) — dưới ngưỡng trên
-        #     nên không ai chặn, mà 2px đã đủ làm 86% số ô "đổi". Nắn về mốc.
-        if self.stab_on:
-            frame = self._stabilize(frame, res)
 
         # 1) Ô bị người/xe che: không sạch, không bẩn — lượt này không có dữ liệu.
         occ = occluded_ids(grid.cells, person_boxes, self.occlusion_thr,
@@ -451,11 +536,17 @@ class ZoneTrashDetector:
             for c in live:
                 p = frame[c.y1:c.y2, c.x1:c.x2]
                 if p.size:
-                    self.ref.observe_clean(c.id, self.ref.describe(p))
+                    # CỨNG, không EMA: EMA 5% thì lượt sau vẫn thoả điều kiện
+                    # guard nên guard bắn lại, mà mỗi lần bắn lại xoá mốc bù méo
+                    # -> khoá chết, cả vùng mù. Đo được 8/8 lượt sau một cú hích.
+                    self.ref.set_clean(c.id, self.ref.describe(p))
                 self._run[c.id] = 0
             # Nền vừa học lại từ khung này -> mốc bù méo phải lấy lại từ đúng
             # khung đó, không thì bù về một thời điểm mà nền không còn khớp.
-            self._stab_ref = None
+            self._stab_gray = None
+            # Nạp lại nền = đúng điều kiện nuốt rác. Rác đang nằm trong vùng lúc
+            # này vừa bị chốt thành nền, cổng đổi mù -> để detector quét lại.
+            self._arm_resweep()
             res.global_change = True
             logger.info("[%s] đổi sáng toàn cục (%d/%d ô, trải %.0f%%) -> nạp lại "
                         "nền, bỏ lượt này", self.label, chg_known, known, spread * 100)
@@ -506,6 +597,7 @@ class ZoneTrashDetector:
                     res.hot.append(c)
             res.n_scored = len(live)
             self._run_verify(res, frame)
+            self._post_reset_sweep(res, frame, live)
             res.dirty = len(res.hot) >= self.min_hot
             res.mask_progress = self.clutter.progress() if self.clutter_on else 1.0
             self._decide_alert(res, now)

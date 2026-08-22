@@ -335,8 +335,11 @@ trúng rác thật ngoài khung nhãn vẫn bị tính là thừa, và bảng đ
   bị xê dịch trong giờ có người dùng bàn ghế.
 - Detector **bác bỏ 98%** ô nóng (19463 ô bị loại, 419 hộp được xác nhận).
 - Chuỗi cổng cắt **238 lượt có ô nóng → 12 cảnh báo**.
-- Guard đổi sáng bắn đúng lúc cần (`131/225 ô, trải 88%`), nạp lại nền, **không**
-  bắn cảnh báo.
+- Guard đổi sáng bắn `91/697` lượt và **không** bắn cảnh báo nào — lúc đầu đọc
+  thành "bắn đúng lúc cần". Đọc kỹ hơn thì `86` lượt trong số đó nằm trong các
+  cụm **liên tiếp**, dài nhất `33` lượt = **16,5 phút mù liền**, hai lần. Số ô
+  đổi lặp y hệt (`207/225` bốn lượt liền) là dấu vân tay của khoá chết, không
+  phải của một lần đổi sáng. Đã sửa — xem §5.
 - 206 ms/lượt (11ms cổng đổi + ~195ms detector) = 0,7% thời gian máy ở nhịp 30s.
 
 ### Chỉ số nghiệm thu
@@ -400,17 +403,45 @@ thay được. Đọc phải xem **cả hai cột**, chỉ nhìn recall là bị
 `sharktide` đạt 100% bằng cách rải 118 hộp lên 6 khung chứa 20 vật. Ba bộ kia
 đều không có mẫu âm trong lúc train — nhiều khả năng đó là chỗ khác biệt.
 
-**Lỗ recall tự động.** `scene_shift ≥ thr_px` → xoá nền → lượt sau mọi ô chưa có
-nền **tự chốt hiện trạng làm nền**. Rác đang nằm trong vùng lúc đó thành bình
-thường, **im vĩnh viễn**, không log gì báo:
+**Lỗ nuốt rác — đã bịt.** Nền bị vứt đúng lúc trong vùng đang có rác thì lượt
+sau mọi ô tự chốt hiện trạng làm nền: rác thành bình thường và **im vĩnh viễn**,
+không log gì báo. Kiểu hỏng tệ nhất — hệ thống trông vẫn khoẻ. Đo lại được bằng
+`python3 tools/absorb_test.py`:
 
-```
-A. camera bi hich 30px trong luc co rac -> sau 15 luot: nong=0  *** THANH NEN ***
-B. van hanh bam CHOT LAI NEN luc co rac -> sau 15 luot: nong=0  *** THANH NEN ***
-C. rang dong 60 phut, rac vut tu truoc  -> sau rang dong: nong=7  van bao duoc
-```
+| ca | trước | sau |
+|---|---|---|
+| KIỂM CHỨNG không vứt nền | 40 ô nóng | 40 ô nóng |
+| A camera bị hích 30px lúc có rác | **0** *nuốt* | 34 ô nóng |
+| A camera bị hích 60px lúc có rác | **0** *nuốt* | 56 ô nóng |
+| B vận hành CHỐT LẠI NỀN lúc có rác | **0** *nuốt* | 55 ô nóng |
 
-A là tự động. Hướng sửa: **dời** nền theo độ lệch ECC đã đo thay vì vứt đi.
+Ba lỗi lồng nhau, phải gỡ cả ba:
+
+1. **Sai thứ tự.** `scene_shift.thr_px` = 12px xét *trước* `_stabilize`, mà
+   `_stabilize` bù được tới `stab.max_px` = 40px. Mọi cú hích 12–40px đều thổi
+   bay nền dù nắn lại được thừa sức. Đảo lại: nắn trước, nắn không cứu được mới
+   vứt.
+2. **Nắn không đủ chính xác.** ECC ở `downscale: 4` chính xác cỡ 1px ảnh thu nhỏ
+   = 4px ảnh gốc, mà 2px đã đủ làm 86% số ô "đổi". Hích 30px, nắn xong vẫn còn
+   179/360 ô đổi → guard đổi sáng bắn. Thêm bước ước lượng lại ở mức mịn hơn khi
+   lệch ≥ `fine_px` (8px): 179 → 104 ô, guard thôi bắn.
+3. **Guard đổi sáng tự khoá chết.** "Nạp lại nền" thực ra gọi `observe_clean` —
+   EMA α=0,05, tức chỉ nhích nền **5%** mỗi lượt. Nên lượt sau vẫn thoả điều kiện
+   guard, guard bắn lại, mà mỗi lần bắn nó xoá luôn mốc bù méo → bù méo không bao
+   giờ lấy được mốc. Đổi sang `set_clean` (nạp cứng, không EMA).
+
+   Lỗi số 3 **đã xảy ra trong lần chạy thật 5,88 giờ**: guard bắn 91/697 lượt
+   (13%), và 86 lượt trong đó nằm trong các cụm liên tiếp — dài nhất **33 lượt
+   = 16,5 phút mù liên tục**, hai lần. Đọc log thấy ngay vì số ô đổi lặp y hệt
+   nhau (`207/225` bốn lượt liền). Trước đây nó bị đọc nhầm thành "guard bắn
+   đúng lúc cần".
+
+Còn lại một đường nữa không tự sửa được: khi camera bị chỉnh hướng **thật** (quá
+`max_px`) thì buộc phải vứt nền. Lúc đó cổng đổi mù vì mất cái để so, nên
+`_post_reset_sweep` cho **detector quét khắp vùng** trong `dwell` lượt — detector
+không cần nền. Đòi đúng cùng điều kiện bền vững: thấy liên tiếp `dwell` lượt mới
+tính, nên người đứng lại vài giây không qua được. Chỉ chạy sau khi vứt nền nên
+đường chạy thường không đụng gì: **báo nhầm trên chuỗi sạch giữ nguyên 0%**.
 
 **Cảnh đông người không dùng được.** video11 có người ở 99% số lượt → 21/78 ô
 nóng, `dwell` vô dụng. Ngưỡng tự kiểm: >70% số lượt có người → không dùng được.
@@ -418,7 +449,15 @@ nóng, `dwell` vô dụng. Ngưỡng tự kiểm: >70% số lượt có người
 **Đồ đạc bị dời gây cảnh báo.** Bấm `r` sau khi dời, loại đồ đạc khỏi ROI, hoặc
 thêm trần cỡ hộp trong tầng xác nhận (chưa làm — đánh đổi thật với túi rác to).
 
-**Chưa cắm được vào worker** — `TrashConsumer` vẫn là comment.
+**Cắm vào worker** — [`integration/trash_consumer.py`](integration/trash_consumer.py).
+Thả vào `detect/trash/pipeline.py` của worker rồi đăng ký ở `detect/registry.py`;
+`core/` không đổi dòng nào. Cần đúng **một** thay đổi ở repo worker: thêm
+`"trash"` vào `ALLOWED_LABELS` trong `detect/base.py`, không thì engine lọc sạch
+mọi Detection của module và nó im lặng. Adapter **không** khai `requires=("object",)`
+— che ô theo box người đã bị bỏ (giảm đúng 0 cảnh báo, bịt mắt 24% diện tích),
+khai `requires` chỉ tổ ép engine chạy thêm detector object cho camera chỉ bật rác.
+`tests/selftest.py` kiểm hình dạng adapter để lỗi kiểu "đổi tên trường trong
+ScanResult xong quên sửa adapter" không phải đợi tới lúc chạy trong worker.
 
 **Không general, và không thể general.** "Vùng này có còn trống không" định nghĩa
 tương đối với từng camera. Cái đạt được là **lắp không cần train**.
@@ -432,6 +471,7 @@ bash tools/selfcheck.sh              # kiem toan goi — chay cai nay truoc
 python3 tests/selftest.py            # ~60 case, stdlib, vài giây
 python3 tests/integration_test.py    # cần cv2
 python3 tools/run_test_cases.py      # sinh lại test_cases/
+python3 tools/absorb_test.py         # lỗ nuốt rác — phải ra 'Không ca nào nuốt rác'
 ```
 
 `selfcheck.sh` bắt các lỗi chỉ lộ ra khi ai đó **chạy thật trên máy khác**: cú
@@ -504,6 +544,7 @@ tools/measure_px.py      đo cỡ vật theo px để chọn cell_px
 tools/calibrate.py       dò ngưỡng litter_thr cho mode classifier
 tools/bench_models.py    so nhiều model rác bằng cùng một thước đo
 tools/bench_sweep.py     quét ngưỡng, so ở điểm làm việc tương đương
+tools/absorb_test.py     lỗ nuốt rác khi nền bị vứt — 3 ca A/B/kiểm chứng
 training/tools/eval_datasets.py   recall tách ĐÃ TRAIN / VAL / CHƯA HỀ THẤY
 training/tools/recall_by_size.py  recall theo cỡ vật — vực dốc dưới 12px
 tools/keepalive.sh       chạy shadow liên tục, tự bật lại nếu chết
@@ -514,6 +555,7 @@ tests/integration_test.py cần cv2
 
 models/trash_yolo11n.pt   detector 1 lớp, mAP50 0,747
 config/day_cfg.yaml       cấu hình đang chạy thật
+integration/              adapter cắm vào worker EcoVision
 test_cases/               kết quả bộ test + ảnh
 training/                 dựng bộ dữ liệu + train lại + soát dữ liệu
 ```

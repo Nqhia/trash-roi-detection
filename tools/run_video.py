@@ -131,8 +131,10 @@ def iter_frames(source: str, interval_s: float):
 class YoloBoxes:
     """Nguồn box person/vehicle rời, chỉ dùng cho tool này.
 
-    Trong worker thật thì KHÔNG cần: TrashConsumer khai `requires=("object",)`
-    và nhận box sẵn từ ctx.prior["object"], không chạy thêm model nào.
+    Trong worker thật thì KHÔNG cần, mà cũng KHÔNG dùng: che ô theo box người
+    đã bị bỏ vì đo được nó giảm đúng 0 cảnh báo trong khi bịt mắt tới 24% diện
+    tích vùng. `integration/trash_consumer.py` gọi `scan(..., person_boxes=())`.
+    Giữ cờ `--yolo` ở tool này chỉ để so lại được số cũ.
     """
 
     KEEP = {"person", "bicycle", "car", "motorcycle", "bus", "truck"}

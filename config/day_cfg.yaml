@@ -42,6 +42,12 @@ stabilize:
   # (158 -> 82) vua cuu duoc lech that 4px (245 -> 0). <3px thi hai, >5px mat
   # tac dung.
   min_px: 3.0
+  # Lech >= muc nay thi UOC LUONG LAI o downscale min hon (ds/2) roi moi nan.
+  # Buoc tho chi de BIET co dang nan khong; nan thi phai nan theo so chinh xac.
+  # ECC o ds4 chinh xac co 1px anh thu nho = 4px anh goc, ma 2px da du lam 86%
+  # so o "doi". Do duoc: hich 30px, nan mot buoc xong VAN con 179/360 o doi ->
+  # guard doi sang ban -> mu ca vung. Them buoc min: 179 -> 104 o, guard thoi ban.
+  fine_px: 8.0
   max_px: 40                 # lon hon = camera bi xoay that, de cong dich khung lo
   max_deg: 3.0
 

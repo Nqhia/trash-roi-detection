@@ -73,6 +73,19 @@ class CellReference:
         self._ref[cell_id] = desc.copy() if ref is None else \
             (1.0 - self.alpha) * ref + self.alpha * desc
 
+    def set_clean(self, cell_id, desc: np.ndarray) -> None:
+        """Nạp lại nền CỨNG cho ô này — không EMA.
+
+        Dùng khi guard đổi sáng toàn cục bắn. `observe_clean` là EMA alpha=0,05
+        nên nó chỉ nhích nền 5% mỗi lượt: sau một lần guard bắn, nền vẫn còn 95%
+        cảnh CŨ nên lượt sau vẫn thoả điều kiện guard, và guard bắn lại. Mà mỗi
+        lần bắn nó xoá luôn mốc bù méo, nên bù méo không bao giờ lấy được mốc.
+        Kết quả đo được: sau một cú hích 30px, guard bắn LIÊN TỤC 8/8 lượt, ô
+        đổi giữ nguyên 318-347/360, không gì báo được nữa — vùng mù hoàn toàn
+        chứ không chỉ "bỏ lượt này".
+        """
+        self._ref[cell_id] = desc.copy()
+
     def has(self, cell_id) -> bool:
         return cell_id in self._ref
 
