@@ -56,6 +56,7 @@ class ScanResult:
     stab_ok: bool = False          # nắn được về mốc -> nền cũ VẪN DÙNG ĐƯỢC
     ref_reset: bool = False        # đã vứt nền lượt này (camera bị chỉnh hướng)
     n_sweep_hot: int = 0           # ô do quét detector sau reset tìm ra
+    n_escalated_hot: int = 0       # ô được cứu lại nhờ soi kỹ ở cỡ nhỏ
     max_run: int = 0               # bộ đếm bền vững lớn nhất — để đo ĐỘ TRỄ thật
     verify_conf: float = 0.0       # điểm tin cậy CAO NHẤT detector đưa ra
     mask_progress: float = 0.0
@@ -197,6 +198,21 @@ class ZoneTrashDetector:
         # Tầng xác nhận bằng detector. Xem core/verify.py để biết vì sao nó nằm
         # ở đây chứ không nằm trong scorers.py.
         self.verifier = RegionVerifier(cfg.get("verify", {}))
+        # LEO THANG: ô nào cổng đổi giữ nóng mà detector bác bỏ liên tiếp
+        # `escalate_after` lượt thì soi lại chỗ đó bằng ô lát nhỏ hơn.
+        #
+        # Vì sao không soi kỹ ngay từ đầu: đo được, bật đại trà thì báo nhầm
+        # trên chuỗi CCTV sạch nhảy 0% -> 39%, gần bằng detector chạy một mình.
+        # Vì sao vẫn cần: rác thật vứt trước camera (túi ni lông, nút buộc 44px)
+        # ở vùng 320px cho 0 hộp, cắt sát 96-128px thì cho 0,38-0,49 — hệ thống
+        # KHÔNG BAO GIỜ báo cái túi đó.
+        #
+        # Chỗ tách được hai ca: người đi qua chỉ giữ ô nóng 1-2 lượt rồi thôi,
+        # vật bỏ lại giữ mãi. Nên đòi bền vững trước, mới cho soi kỹ.
+        _ve = cfg.get("verify", {})
+        self.escalate_after = int(_ve.get("escalate_after", 0))
+        self.escalate_scale = float(_ve.get("escalate_scale", 0.5))
+        self._reject_run: dict = {}
 
         self.confirm = ConfirmGate()
         self.dedup = DedupGate()
@@ -423,7 +439,34 @@ class ZoneTrashDetector:
         res.verify_boxes = boxes
         res.verify_conf = max((b[4] for b in boxes if len(b) > 4), default=0.0)
         res.n_verify_dropped = before - len(keep)
+
+        # Đếm số lượt LIÊN TIẾP mỗi ô nóng bị detector bác bỏ.
+        kept_ids = {c.id for c in keep}
+        stale = []
+        for c in res.hot:
+            if c.id in kept_ids:
+                self._reject_run[c.id] = 0
+            else:
+                n = self._reject_run.get(c.id, 0) + 1
+                self._reject_run[c.id] = n
+                if self.escalate_after and n >= self.escalate_after:
+                    stale.append(c)
         res.hot = keep
+        if not stale:
+            return
+        try:
+            k2, b2 = self.verifier.verify_scaled(frame, stale, self.escalate_scale)
+        except Exception as e:                       # noqa: BLE001
+            logger.warning("[%s] soi kỹ lỗi: %s", self.label, e)
+            return
+        if k2:
+            res.hot = keep + [c for c in k2 if c.id not in kept_ids]
+            res.n_escalated_hot = len(res.hot) - len(keep)
+            res.verify_boxes = list(res.verify_boxes) + list(b2)
+            for c in k2:
+                self._reject_run[c.id] = 0
+            logger.info("[%s] soi kỹ cứu lại %d ô sau %d lượt bị bác bỏ",
+                        self.label, res.n_escalated_hot, self.escalate_after)
 
     def reset_background(self, keep_clutter: bool = True) -> None:
         """Chốt lại nền: coi hiện trạng là chuẩn mới.
@@ -435,6 +478,7 @@ class ZoneTrashDetector:
         """
         self.ref.reset()
         self._run.clear()
+        self._reject_run.clear()
         self._latched_cells.clear()
         self._clean_run = 0
         self._stab_gray = None     # mốc bù méo phải cùng thời điểm với nền

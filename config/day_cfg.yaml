@@ -91,6 +91,26 @@ verify:
   upscale: 2.0           # PHAI trung upscale luc train (o 320 phong 2x -> 640)
   max_regions: 8
 
+  # LEO THANG: o nao cong doi giu nong ma detector bac bo LIEN TIEP `escalate_after`
+  # luot thi soi lai rieng cho do bang o lat nho hon (`escalate_scale` x max_side).
+  #
+  # Sinh ra tu mot ca that: nguoi vut tui ni long vao vung luc 10:14. Cong doi
+  # thay ngay (o doi 60->76, du dwell luc 10:15) nhung detector bac bo sach moi
+  # luot — sau 4,5 GIO van khong co canh bao nao. Nut buoc tui ~44px, o vung
+  # 320px thi lot thom va troi mat; cat sat 128px thi model cho 0,65.
+  #
+  # Vi sao khong soi ky ngay tu dau: do duoc, bat dai tra cho MOI o nong thi bao
+  # nham tren chuoi CCTV sach nhay 0% -> 39%, gan bang detector chay mot minh.
+  # Cho tach duoc hai ca: nguoi di qua chi giu o nong 1-2 luot roi thoi, vat bo
+  # lai giu mai. Doi ben vung truoc, moi cho soi ky.
+  escalate_after: 8
+  # 0,4 chu khong phai 0,5. Do tren dung cai tui do: scale 0,5 ra hop o (931,883)
+  # — KHONG trung tui, giu 0 o. 0,4 ra 0,65 dung tren tui. Suyt chot 0,5 vi bo
+  # test khong co ca nay, va no se im lang khong bat duoc rac that.
+  # 0,3 cung bat duoc (0,66) nhung hop thua 3 -> 9 va bao nham sach 3% -> 11%.
+  escalate_scale: 0.4
+  max_extra_tiles: 64
+
 # ConfirmGate sinh ra cho mode `classifier`, noi model cham lai tung o moi luot
 # nen diem nhay lung tung va can loc nhieu NGAU NHIEN. O mode `change_only` thi
 # `dwell` DA ep tinh ben vung bang bo dem `_run` — o phai doi LIEN TIEP N luot.

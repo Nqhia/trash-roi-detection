@@ -225,7 +225,7 @@ def main() -> int:
                  # Bốn cột dưới là các đường chạy THÊM VÀO nhưng quên ghi ra, nên
                  # cả lần chạy 41 giờ không có một dòng dữ liệu nào về chúng —
                  # phải đi mò trong log. Đường nào không ghi ra là đường không đo được.
-                 "global_change", "ref_reset", "n_sweep_hot", "max_run", "verify_failed", "verify_conf",
+                 "global_change", "ref_reset", "n_sweep_hot", "n_escalated_hot", "max_run", "verify_failed", "verify_conf",
                  "ms", "hot_cells", "notes"])
 
     # Nói rõ đang chạy tiếp state cũ hay bắt đầu từ trắng — nếu không, một lần
@@ -271,7 +271,7 @@ def main() -> int:
                          f"{res.stab_deg:.3f}", res.n_verify_dropped, len(res.verify_boxes),
                          f"{res.mask_progress:.3f}",
                          int(res.global_change), int(res.ref_reset),
-                         res.n_sweep_hot, res.max_run, int(res.verify_failed),
+                         res.n_sweep_hot, res.n_escalated_hot, res.max_run, int(res.verify_failed),
                          f"{res.verify_conf:.3f}",
                          f"{res.ms:.1f}",
                          " ".join(f"{c.row},{c.col}" for c in res.hot),

@@ -348,7 +348,41 @@ trúng rác thật ngoài khung nhãn vẫn bị tính là thừa, và bảng đ
 |---|---|---|
 | cảnh báo nhầm / camera / ngày | < 1–2 | **chưa đo được** (xem dưới) |
 | recall theo sự kiện | càng cao càng tốt | **5/6 sự kiện CCTV thật** · 86% mức vật |
-| độ trễ phát hiện | < 3 phút | **~7,8 phút ✗** — không đạt |
+| độ trễ phát hiện | < 3 phút | **~3,6 phút** — còn hụt, đã từ 7,8 xuống |
+
+### Leo thang: soi kỹ chỗ cổng đổi khăng khăng là có vật
+
+Sinh ra từ một ca thật, không phải từ suy luận. Người vứt túi ni lông vào vùng
+lúc 10:14. Cổng đổi thấy ngay (ô đổi 60→76, đủ `dwell` lúc 10:15), detector bác
+bỏ sạch mọi lượt — **sau 4,5 giờ vẫn không có cảnh báo nào**.
+
+Nút buộc túi ~44px. Ở vùng 320px nó lọt thỏm và trôi mất; cắt sát 128px thì model
+cho **0,65**. Model không mù, chỉ là được đưa nhìn ở cỡ sai.
+
+Soi kỹ đại trà thì hỏng: **báo nhầm chuỗi sạch 0% → 39%**, gần bằng detector chạy
+một mình (42%). Chỗ tách được hai ca: người đi qua giữ ô nóng 1–2 lượt rồi thôi,
+vật bỏ lại giữ mãi. Nên đòi bền vững trước, mới cho soi kỹ:
+
+| cấu hình | bắt rác | hộp thừa | báo nhầm sạch | sự kiện | độ trễ |
+|---|---|---|---|---|---|
+| tắt | 86% | 3 | **0/36** | 5/6 | 15,6 lượt · 7,8 ph |
+| soi kỹ đại trà | 86% | 21 | 14/36 · 39% | — | — |
+| **after 8 · scale 0,4** | 86% | **3** | 1/36 · 3% | 5/6 | **7,2 lượt · 3,6 ph** |
+| after 8 · scale 0,3 | 86% | 9 | 4/36 · 11% | — | — |
+
+`escalate_scale` **0,4 chứ không phải 0,5**, và đây là chỗ suýt sai: bộ test không
+có ca cái túi, nên quét theo bộ test thì 0,5 trông ổn. Đo trên đúng cái túi đó thì
+0,5 ra hộp ở `(931,883)` — **không trúng túi, giữ 0 ô**. Chốt 0,5 là ship một cấu
+hình im lặng không bắt được rác thật.
+
+Hai lỗi thiết kế tự bắt được trong lúc làm:
+
+1. Bản đầu soi cỡ nhỏ bằng cách **co cửa sổ về tâm cụm**. Sai hoàn toàn — cụm ô
+   nóng trải khắp vùng thì tâm nằm giữa vùng, cửa sổ nhỏ soi đúng chỗ trống còn
+   vật ở rìa thì không ai nhìn. Ra 0 hộp ở mọi tỉ lệ, y hệt như không bật. Phải
+   **lát phủ** cụm.
+2. Trần 12 ô lát quá chặt: vùng 581×275 cần 50 ô ở tỉ lệ 0,4 → lấy thưa 1/5 và ô
+   có vật bị bỏ. Nâng lên 64.
 
 **Độ trễ KHÔNG đạt, và con số 1,5 phút trước đây là sai.** 1,5 phút là `dwell 3 ×
 30s` — thời gian cổng đổi cần để chắc vật còn nằm đó. Nó là **sàn**, không phải

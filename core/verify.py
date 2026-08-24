@@ -199,6 +199,45 @@ class RegionVerifier:
                     break
         return out
 
+    def verify_scaled(self, frame: np.ndarray, cells: list, scale: float,
+                      max_tiles: int = 64) -> tuple:
+        """Soi KỸ đúng chỗ `cells` chỉ ra, bằng ô lát nhỏ hơn.
+
+        Khác `verify()` ở chỗ nó lát phủ cụm thay vì cắt một cửa sổ `max_side`,
+        nên vật nhỏ chiếm phần lớn ảnh đưa vào model thay vì lọt thỏm.
+
+        Đắt và ồn — đo được: bật đại trà cho MỌI ô nóng thì báo nhầm trên chuỗi
+        CCTV sạch nhảy 0% -> 39%. Nên chỉ gọi cho ô đã bị bác bỏ nhiều lượt
+        liên tiếp, tức chỗ cổng đổi khăng khăng là có vật.
+        """
+        import cv2
+
+        if not cells:
+            return [], []
+        h, w = frame.shape[:2]
+        regions = []
+        for g in self.clusters(cells)[: self.max_regions]:
+            regions += self.tiles_of(g, w, h, scale, max_tiles)
+        crops, offs = [], []
+        for (x1, y1, x2, y2) in regions:
+            c = frame[y1:y2, x1:x2]
+            if c.size == 0 or min(c.shape[:2]) < 24:
+                continue
+            s = (self.max_side * self.upscale) / max(c.shape[:2])
+            crops.append(cv2.resize(c, None, fx=s, fy=s,
+                                    interpolation=cv2.INTER_CUBIC))
+            offs.append((x1, y1, s))
+        if not crops:
+            return [], []
+        boxes = []
+        for (ox, oy, s), r in zip(offs, self._model().predict(
+                crops, conf=self.conf, verbose=False)):
+            for b in r.boxes:
+                bx = b.xyxy[0].tolist()
+                boxes.append((ox + bx[0] / s, oy + bx[1] / s,
+                              ox + bx[2] / s, oy + bx[3] / s, float(b.conf[0])))
+        return self._keep(cells, boxes), boxes
+
     def sweep(self, frame: np.ndarray, cells: list, max_tiles: int = 24) -> tuple:
         """Quét detector KHẮP vùng, không cần ô nóng dẫn đường.
 
