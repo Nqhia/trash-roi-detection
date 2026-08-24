@@ -56,6 +56,7 @@ class ScanResult:
     stab_ok: bool = False          # nắn được về mốc -> nền cũ VẪN DÙNG ĐƯỢC
     ref_reset: bool = False        # đã vứt nền lượt này (camera bị chỉnh hướng)
     n_sweep_hot: int = 0           # ô do quét detector sau reset tìm ra
+    max_run: int = 0               # bộ đếm bền vững lớn nhất — để đo ĐỘ TRỄ thật
     mask_progress: float = 0.0
     global_change: bool = False    # đổi sáng toàn cục -> đã nạp lại nền, bỏ lượt
     rearmed: bool = False          # vùng sạch trở lại -> mở chốt, sẵn sàng báo tiếp
@@ -460,6 +461,12 @@ class ZoneTrashDetector:
         h, w = frame.shape[:2]
         grid = self._ensure_grid(poly_norm, w, h)
         res.n_cells = len(grid)
+        # Gán NGAY, không đợi cuối hàm: các nhánh thoát sớm (guard đổi sáng, vứt
+        # nền, lưới rỗng) bỏ qua đoạn gán ở cuối nên CSV ghi 0.0 mặc định. Đọc
+        # log ra "mặt nạ bị reset 20 lần" trong khi nó chưa hề bị reset lần nào
+        # — 20 lượt đó chính là 20 lượt guard thoát sớm. Trường để trống thì
+        # người đọc không thấy nó trống, chỉ thấy một con số sai.
+        res.mask_progress = self.clutter.progress() if self.clutter_on else 1.0
         if not grid.cells:
             return res
 
@@ -610,6 +617,7 @@ class ZoneTrashDetector:
                 elif raw:
                     res.hot.append(c)
             res.n_scored = len(live)
+            res.max_run = max(self._run.values()) if self._run else 0
             self._run_verify(res, frame)
             self._post_reset_sweep(res, frame, live)
             res.dirty = len(res.hot) >= self.min_hot
