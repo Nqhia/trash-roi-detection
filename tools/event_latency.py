@@ -59,6 +59,10 @@ def run_one(cfg: dict, path: str, step: int, ev_frame: int) -> dict:
     raw_scan = None            # lượt đầu cổng đổi đã đủ bền vững (dwell xong)
     fp_before = 0
     min_hot = int(cfg.get("decide", {}).get("min_hot_cells", 1))
+    # Ba chỗ có thể nuốt thời gian, PHẢI tách ra vì cách sửa khác hẳn nhau:
+    n_ver = 0     # cổng đổi nóng nhưng detector vứt sạch  -> detector không thấy vật
+    n_lat = 0     # đã "bẩn" rồi mà vẫn không báo          -> CHỐT cảnh báo giữ chỗ
+    n_dwl = 0     # chưa đủ bền vững                        -> dwell
     while True:
         ok, fr = cap.read()
         if not ok:
@@ -67,6 +71,13 @@ def run_one(cfg: dict, path: str, step: int, ev_frame: int) -> dict:
             res = det.scan(fr, FULL_POLY, (), now=float(n_scan) * 30.0)
             if ev_scan is None and i >= ev_frame:
                 ev_scan = n_scan
+            if ev_scan is not None and alert_scan is None:
+                if len(res.raw_hot) < min_hot:
+                    n_dwl += 1
+                elif len(res.hot) < min_hot:
+                    n_ver += 1
+                elif not res.alert:
+                    n_lat += 1
             if ev_scan is not None and raw_scan is None and len(res.raw_hot) >= min_hot:
                 raw_scan = n_scan
             if res.alert:
@@ -78,7 +89,8 @@ def run_one(cfg: dict, path: str, step: int, ev_frame: int) -> dict:
         i += 1
     cap.release()
     return {"n_scan": n_scan, "ev_scan": ev_scan, "alert_scan": alert_scan,
-            "raw_scan": raw_scan, "fp_before": fp_before}
+            "raw_scan": raw_scan, "fp_before": fp_before,
+            "n_dwl": n_dwl, "n_ver": n_ver, "n_lat": n_lat}
 
 
 def main() -> int:
@@ -107,6 +119,7 @@ def main() -> int:
 
     hit = lat = fps_ = 0
     d_dwell = d_ver = 0
+    tot_dwl = tot_ver = tot_lat = 0
     for v in USABLE:
         p = os.path.join(ABODA, f"video{v}.avi")
         e = find_event(p)
@@ -128,18 +141,20 @@ def main() -> int:
             if dw is not None:
                 d_dwell += dw
                 d_ver += ve
+            tot_dwl += r["n_dwl"]; tot_ver += r["n_ver"]; tot_lat += r["n_lat"]
             print(f"  video{v:<2}  vật ở lượt {r['ev_scan']:>3}/{r['n_scan']:<3}  "
-                  f"báo sau {d:>3} lượt (~{d*30/60:4.1f} phút)"
-                  f"   [chờ dwell {dw}  ·  chờ detector {ve}]"
-                  f"   báo nhầm trước: {r['fp_before']}")
+                  f"báo sau {d:>3} lượt (~{d*30/60:4.1f} ph)   "
+                  f"dwell {r['n_dwl']:>2} · detector vứt {r['n_ver']:>2} · "
+                  f"CHỐT nuốt {r['n_lat']:>2}   nhầm trước: {r['fp_before']}")
 
     n = len(USABLE)
     print(f"\n  recall mức sự kiện : {hit}/{n} = {100*hit/n:.0f}%")
     if hit:
         print(f"  độ trễ trung bình  : {lat/hit:.1f} lượt = ~{lat/hit*30/60:.1f} phút"
               f"   (ngân sách thiết kế: {dwell} lượt = {dwell*30/60:.1f} phút)")
-        print(f"     trong đó chờ cổng đổi : {d_dwell/hit:5.1f} lượt")
-        print(f"     trong đó chờ DETECTOR : {d_ver/hit:5.1f} lượt")
+        print(f"     chờ dwell            : {tot_dwl/hit:5.1f} lượt")
+        print(f"     detector vứt hết ô    : {tot_ver/hit:5.1f} lượt")
+        print(f"     CHỐT cảnh báo nuốt    : {tot_lat/hit:5.1f} lượt")
     print(f"  báo nhầm trước khi vật xuất hiện: {fps_}")
     if args.quiet:
         import builtins

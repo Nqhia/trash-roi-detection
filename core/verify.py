@@ -49,8 +49,26 @@ class RegionVerifier:
     def _model(self):
         if self._m is None:
             from ultralytics import YOLO      # nạp lười: selftest không cần
-            self._m = YOLO(self.weights)
+            self._m = YOLO(self._resolve(self.weights))
         return self._m
+
+    @staticmethod
+    def _resolve(w: str) -> str:
+        """Đường dẫn tương đối phải neo vào GÓC GÓI, không vào thư mục đang đứng.
+
+        Bẫy thật, đã dính: chạy tool từ thư mục khác thì `models/trash_yolo11n.pt`
+        không giải được, ultralytics coi đó là TÊN MODEL và đi tải từ GitHub. Gặp
+        403 rate limit -> ném lỗi -> `_run_verify` giữ nguyên ô nóng (đúng thiết
+        kế: detector hỏng thì không được nuốt cảnh báo). Kết quả là pipeline chạy
+        KHÔNG CÓ tầng xác nhận mà nhìn vào output vẫn thấy hợp lý — cùng một
+        video ra 28 lượt hay 2 lượt tuỳ chỗ đứng lúc gõ lệnh.
+        """
+        import os
+        if not w or os.path.isabs(w) or os.path.exists(w):
+            return w
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cand = os.path.join(root, w)
+        return cand if os.path.exists(cand) else w
 
     def clusters(self, cells: list) -> list:
         todo, out = list(cells), []
