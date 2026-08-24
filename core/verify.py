@@ -44,6 +44,16 @@ class RegionVerifier:
         self.min_side = int(v.get("min_side_px", 160))
         self.upscale = float(v.get("upscale", 2.0))
         self.max_regions = int(v.get("max_regions", 8))
+        # Soi THEM ở cỡ nhỏ hơn. Vì sao cần, đo trên rác thật vứt trước camera:
+        # túi ni lông có nút buộc 44px, ở vùng 320px phóng 2x model cho 0 hộp,
+        # nhưng cắt sát 96-128px thì cho 0,38-0,49. Vật nhỏ trong vùng to thì
+        # trôi mất — mà vùng to là do cụm ô nóng rộng, không phải do vật to.
+        # Mỗi số là TỈ LỆ so với cạnh vùng đã chọn; [] = tắt, giữ y như cũ.
+        self.extra_scales = [float(x) for x in v.get("extra_scales", [])]
+        self.min_extra_px = int(v.get("min_extra_px", 96))
+        # Trần số ô lát cho lượt soi cỡ nhỏ. Đặt 12 là quá chặt: vùng
+        # 581x275 cần 50 ô ở tỉ lệ 0,4 -> lấy thưa 1/5 và ô có vật bị bỏ.
+        self.max_extra_tiles = int(v.get("max_extra_tiles", 64))
         self._m = None
 
     def _model(self):
@@ -97,6 +107,35 @@ class RegionVerifier:
         y1 = int(max(0, min(h - side, cy - side / 2)))
         return x1, y1, int(min(w, x1 + side)), int(min(h, y1 + side))
 
+    def tiles_of(self, grp: list, w: int, h: int, scale: float,
+                 max_tiles: int = 12) -> list:
+        """LÁT PHỦ cụm bằng ô nhỏ, không co cửa sổ về tâm cụm.
+
+        Bản đầu tôi làm co-về-tâm: `side * scale` rồi căn vào trọng tâm cụm. Sai
+        hoàn toàn — cụm ô nóng trải khắp vùng thì trọng tâm nằm giữa vùng, cửa
+        sổ nhỏ soi đúng chỗ trống ở giữa còn vật nằm ở rìa thì không ai nhìn.
+        Đo trên rác thật: co-về-tâm cho 0 hộp ở mọi tỉ lệ, y như không bật.
+        """
+        x1 = max(0, min(c.x1 for c in grp) - self.pad)
+        y1 = max(0, min(c.y1 for c in grp) - self.pad)
+        x2 = min(w, max(c.x2 for c in grp) + self.pad)
+        y2 = min(h, max(c.y2 for c in grp) + self.pad)
+        side = max(self.min_extra_px, int(self.max_side * scale))
+        step = max(8, side // 2)
+        xs = list(range(x1, max(x1 + 1, x2 - side + 1), step))
+        ys = list(range(y1, max(y1 + 1, y2 - side + 1), step))
+        if xs[-1] + side < x2:
+            xs.append(max(0, x2 - side))
+        if ys[-1] + side < y2:
+            ys.append(max(0, y2 - side))
+        out = [(x, y, min(w, x + side), min(h, y + side)) for y in ys for x in xs]
+        if len(out) > max_tiles:
+            k = (len(out) + max_tiles - 1) // max_tiles
+            logger.warning("soi cỡ nhỏ: cần %d ô lát, trần %d -> lấy thưa 1/%d",
+                           len(out), max_tiles, k)
+            out = out[::k][:max_tiles]
+        return out
+
     def verify(self, frame: np.ndarray, cells: list) -> tuple:
         """-> (ô được xác nhận, hộp phát hiện ở toạ độ khung gốc).
 
@@ -116,12 +155,18 @@ class RegionVerifier:
             groups.sort(key=len, reverse=True)
             groups = groups[: self.max_regions]
         regions = [self.region_of(g, w, h) for g in groups]
+        for g in groups:
+            for k in self.extra_scales:
+                regions += self.tiles_of(g, w, h, k, self.max_extra_tiles)
 
         crops, offs = [], []
         for (x1, y1, x2, y2) in regions:
             c = frame[y1:y2, x1:x2]
             if c.size == 0:
                 continue
+            # Giữ NGUYÊN ảnh đầu vào cho model dù vùng nhỏ đi: vùng 96px cũng
+            # phóng lên đúng `max_side * upscale` px. Đó chính là chỗ ăn tiền —
+            # vật chiếm phần lớn ảnh thay vì lọt thỏm.
             s = (self.max_side * self.upscale) / max(c.shape[:2])
             crops.append(cv2.resize(c, None, fx=s, fy=s,
                                     interpolation=cv2.INTER_CUBIC))
