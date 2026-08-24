@@ -346,15 +346,34 @@ trúng rác thật ngoài khung nhãn vẫn bị tính là thừa, và bảng đ
 
 | chỉ số | ngưỡng | pipeline này |
 |---|---|---|
-| cảnh báo nhầm / camera / ngày | < 1–2 | **chưa đo đủ 24h** |
-| recall theo sự kiện | càng cao càng tốt | 86% (21 vật, 1 camera trong nhà) |
-| độ trễ phát hiện | < 3 phút | **1,5 phút ✓** |
+| cảnh báo nhầm / camera / ngày | < 1–2 | **chưa đo được** (xem dưới) |
+| recall theo sự kiện | càng cao càng tốt | **5/6 sự kiện CCTV thật** · 86% mức vật |
+| độ trễ phát hiện | < 3 phút | **~7,8 phút ✗** — không đạt |
+
+**Độ trễ KHÔNG đạt, và con số 1,5 phút trước đây là sai.** 1,5 phút là `dwell 3 ×
+30s` — thời gian cổng đổi cần để chắc vật còn nằm đó. Nó là **sàn**, không phải
+độ trễ. Đo trên 6 sự kiện CCTV thật (`tools/event_latency.py`):
+
+| | lượt |
+|---|---|
+| chờ cổng đổi đủ bền vững | **0,0** |
+| chờ detector chịu gật | **15,6** |
+| tổng | 15,6 lượt ≈ 7,8 phút |
+
+Cổng đổi bắt vật ngay lập tức ở **cả 6/6 video**. Toàn bộ độ trễ là tầng xác nhận
+từ chối cho tới khi nó chịu nhận ra vật. Quét ngưỡng detector 0,05→0,30 không
+gỡ được: có video kẹt **28 lượt ở mọi ngưỡng**, và hạ ngưỡng lại làm recall
+*giảm* (0,05 → 4/6) vì báo nhầm nhiều hơn thì chốt cảnh báo giữ chỗ, nuốt mất sự
+kiện thật sau đó. Sáu sự kiện là quá ít để chỉnh tham số — từng video dao động
+0→37 lượt giữa các ngưỡng — nhưng kết luận cấu trúc thì đứng vững ở mọi ngưỡng:
+**detector là chỗ nghẽn, không phải `dwell`.**
 
 **FP/ngày.** Lần chạy 5,9 giờ cho 49 FP/ngày nếu tính trên toàn clip, nhưng mặt
 nạ nhiễu mới chín ở giờ thứ 5,83 nên 99% thời gian là giai đoạn học. Sau khi
 chín chỉ có 0,05h dữ liệu — quá ngắn để kết luận gì. **Cần ≥24h liên tục.**
 
-**Độ trễ: 4,0 → 1,5 phút.** Bản đầu dùng `dwell 5` + `confirm 4/6` = phải 8 lượt
+**Sàn độ trễ: 4,0 → 1,5 phút.** (Sàn, không phải độ trễ thật — xem bảng trên.)
+Bản đầu dùng `dwell 5` + `confirm 4/6` = phải 8 lượt
 mới báo. Đó là **lỗi thiết kế, không phải đánh đổi cần thiết**: hai cổng lọc
 trùng nhau. ConfirmGate sinh ra cho mode `classifier`, nơi model chấm lại từng ô
 mỗi lượt nên điểm nhảy lung tung và cần lọc nhiễu *ngẫu nhiên*. Ở `change_only`
@@ -490,6 +509,7 @@ python3 tests/selftest.py            # ~60 case, stdlib, vài giây
 python3 tests/integration_test.py    # cần cv2
 python3 tools/run_test_cases.py      # sinh lại test_cases/
 python3 tools/absorb_test.py         # lỗ nuốt rác — phải ra 'Không ca nào nuốt rác'
+python3 tools/event_latency.py       # recall sự kiện + độ trễ trên 6 video ABODA
 ```
 
 `selfcheck.sh` bắt các lỗi chỉ lộ ra khi ai đó **chạy thật trên máy khác**: cú
@@ -562,7 +582,9 @@ tools/measure_px.py      đo cỡ vật theo px để chọn cell_px
 tools/calibrate.py       dò ngưỡng litter_thr cho mode classifier
 tools/bench_models.py    so nhiều model rác bằng cùng một thước đo
 tools/bench_sweep.py     quét ngưỡng, so ở điểm làm việc tương đương
-tools/absorb_test.py     lỗ nuốt rác khi nền bị vứt — 3 ca A/B/kiểm chứng
+tools/absorb_test.py     lỗ nuốt rác khi nền bị vứt — 5 ca A/B/C/D/kiểm chứng
+tools/find_events.py     dò mốc vật bị bỏ lại trong ABODA (NHÃN — phải soi mắt)
+tools/event_latency.py   recall mức sự kiện + phân rã độ trễ trên CCTV thật
 training/tools/eval_datasets.py   recall tách ĐÃ TRAIN / VAL / CHƯA HỀ THẤY
 training/tools/recall_by_size.py  recall theo cỡ vật — vực dốc dưới 12px
 tools/keepalive.sh       chạy shadow liên tục, tự bật lại nếu chết
