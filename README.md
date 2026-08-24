@@ -348,7 +348,31 @@ trúng rác thật ngoài khung nhãn vẫn bị tính là thừa, và bảng đ
 |---|---|---|
 | cảnh báo nhầm / camera / ngày | < 1–2 | **chưa đo được** (xem dưới) |
 | recall theo sự kiện | càng cao càng tốt | **5/6 sự kiện CCTV thật** · 86% mức vật |
-| độ trễ phát hiện | < 3 phút | **~3,6 phút** — còn hụt, đã từ 7,8 xuống |
+| độ trễ phát hiện | < 3 phút | **~3,2 phút** — còn hụt chút, đã từ 7,8 xuống |
+
+### Guard đổi sáng nguy hiểm hơn ở VÙNG NHỎ
+
+Guard tính theo **tỉ lệ** ô đổi (`global_change_frac: 0.45`), nên vùng càng ít ô
+càng dễ chạm ngưỡng. Đo trên hai luồng chạy cùng camera cùng thời gian:
+
+| vùng | ô | guard bắn |
+|---|---|---|
+| bàn ghế | 225 | 0,5% số lượt · **15 lần/ngày** |
+| sàn trống | 41 | 2,0% số lượt · **54 lần/ngày** |
+
+Mỗi lần bắn là một lần nạp lại nền — tức 54 cơ hội mỗi ngày nuốt mất vật đang
+nằm trong vùng. Vùng nhỏ nghe thì "sạch hơn" nhưng lại rủi ro hơn.
+
+Lớp `_post_reset_sweep` sinh ra đúng cho ca này, nhưng ban đầu nó quét ở ô lát
+`max_side` (320px) — đúng cỡ đã chứng minh là trượt cái túi thật. Quét ở cỡ đó
+là **quét cho có**: nhìn xong vẫn không thấy gì. Nay nó soi ở `escalate_scale`.
+
+Đo trên đúng cái túi thật (`tools/bag_test.py`), khung sạch 10:03 và khung có túi
+10:20 của chính camera này:
+
+| | trước | sau |
+|---|---|---|
+| guard bắn, nuốt túi | **không báo** | **báo sau 3 lượt · 1,5 phút** |
 
 ### Leo thang: soi kỹ chỗ cổng đổi khăng khăng là có vật
 
@@ -367,7 +391,7 @@ vật bỏ lại giữ mãi. Nên đòi bền vững trước, mới cho soi k�
 |---|---|---|---|---|---|
 | tắt | 86% | 3 | **0/36** | 5/6 | 15,6 lượt · 7,8 ph |
 | soi kỹ đại trà | 86% | 21 | 14/36 · 39% | — | — |
-| **after 8 · scale 0,4** | 86% | **3** | 1/36 · 3% | 5/6 | **7,2 lượt · 3,6 ph** |
+| **after 8 · scale 0,4** | 86% | **3** | 1/36 · 3% | 5/6 | **6,4 lượt · 3,2 ph** |
 | after 8 · scale 0,3 | 86% | 9 | 4/36 · 11% | — | — |
 
 `escalate_scale` **0,4 chứ không phải 0,5**, và đây là chỗ suýt sai: bộ test không
@@ -619,6 +643,7 @@ tools/bench_sweep.py     quét ngưỡng, so ở điểm làm việc tương đ�
 tools/absorb_test.py     lỗ nuốt rác khi nền bị vứt — 5 ca A/B/C/D/kiểm chứng
 tools/find_events.py     dò mốc vật bị bỏ lại trong ABODA (NHÃN — phải soi mắt)
 tools/event_latency.py   recall mức sự kiện + phân rã độ trễ trên CCTV thật
+tools/bag_test.py        ca thật: túi ni lông người vứt vào vùng 24/08
 training/tools/eval_datasets.py   recall tách ĐÃ TRAIN / VAL / CHƯA HỀ THẤY
 training/tools/recall_by_size.py  recall theo cỡ vật — vực dốc dưới 12px
 tools/keepalive.sh       chạy shadow liên tục, tự bật lại nếu chết

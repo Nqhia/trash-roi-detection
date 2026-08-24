@@ -54,6 +54,7 @@ class RegionVerifier:
         # Trần số ô lát cho lượt soi cỡ nhỏ. Đặt 12 là quá chặt: vùng
         # 581x275 cần 50 ô ở tỉ lệ 0,4 -> lấy thưa 1/5 và ô có vật bị bỏ.
         self.max_extra_tiles = int(v.get("max_extra_tiles", 64))
+        self.escalate_scale = float(v.get("escalate_scale", 0.0))
         self._m = None
 
     def _model(self):
@@ -238,7 +239,8 @@ class RegionVerifier:
                               ox + bx[2] / s, oy + bx[3] / s, float(b.conf[0])))
         return self._keep(cells, boxes), boxes
 
-    def sweep(self, frame: np.ndarray, cells: list, max_tiles: int = 24) -> tuple:
+    def sweep(self, frame: np.ndarray, cells: list,
+              max_tiles: int | None = None) -> tuple:
         """Quét detector KHẮP vùng, không cần ô nóng dẫn đường.
 
         Dùng sau khi nền bị vứt: lúc đó cổng đổi mù (không còn cái gì để so),
@@ -253,12 +255,23 @@ class RegionVerifier:
 
         if not cells:
             return [], []
+        # Trần 24 là của thời quét ở 320px. Ở cỡ nhỏ, vùng 581x275 cần ~50 ô lát
+        # nên 24 sẽ lấy thưa và bỏ đúng ô có vật — đã dính lỗi này một lần rồi.
+        if max_tiles is None:
+            max_tiles = self.max_extra_tiles
         h, w = frame.shape[:2]
         x1 = int(max(0, min(c.x1 for c in cells) - self.pad))
         y1 = int(max(0, min(c.y1 for c in cells) - self.pad))
         x2 = int(min(w, max(c.x2 for c in cells) + self.pad))
         y2 = int(min(h, max(c.y2 for c in cells) + self.pad))
-        side, step = self.max_side, max(1, self.max_side // 2)
+        # Cỡ ô lát: theo `escalate_scale` nếu có. Quét sau khi nền bị vứt CHÍNH LÀ
+        # ca "có thể vừa nuốt mất vật", nên phải soi ở cỡ đủ nhỏ để nhìn ra vật.
+        # Đo trên túi ni lông thật: ô lát 320px cho 0 hộp, 128px cho 0,65 — quét
+        # ở 320px là quét cho có, nhìn xong vẫn không thấy gì.
+        base = self.max_side
+        if self.escalate_scale and self.escalate_scale < 1.0:
+            base = max(self.min_extra_px, int(self.max_side * self.escalate_scale))
+        side, step = base, max(1, base // 2)
         xs = list(range(x1, max(x1 + 1, x2 - side + 1), step))
         ys = list(range(y1, max(y1 + 1, y2 - side + 1), step))
         if xs[-1] + side < x2:
