@@ -60,7 +60,15 @@ def main() -> int:
     vb = sum(int(r["n_verify_boxes"]) for r in rows)
     print(f"detector: bác bỏ {vd} ô · xác nhận {vb} hộp "
           f"({100*vd/max(1,vd+vb):.0f}% bị bác bỏ)")
-    print(f"mặt nạ nhiễu: chín {float(rows[-1]['mask_progress'])*100:.1f}%")
+    # KHONG doc dong cuoi: mat na bi reset nhieu lan trong mot lan chay, doc
+    # dong cuoi thi tuy may man ma ra 0% hay 100% — da bi con so nay danh lua
+    # mot lan (bao "chin 0,0%" trong khi no chin suot 87% lan chay).
+    mp = [float(r["mask_progress"]) for r in rows]
+    ripe = sum(1 for v in mp if v >= 1.0)
+    resets = sum(1 for i in range(1, len(mp)) if mp[i] < mp[i - 1] - 1e-9)
+    print(f"mặt nạ nhiễu: chín ở {ripe}/{len(mp)} lượt ({100*ripe/max(1,len(mp)):.0f}%)"
+          f" · bị reset {resets} lần · lượt trúng ô đã mute "
+          f"{sum(int(r['n_muted_hit']) for r in rows)}")
 
     print(f"\n--- phân bố theo {args.bin_min:.0f} phút ---")
     b = args.bin_min * 60
