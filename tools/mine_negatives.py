@@ -88,8 +88,11 @@ def main() -> int:
                 y2 = min(h, int(b[3]) + args.pad)
                 crop = frame[y1:y2, x1:x2]        # SẠCH, chưa vẽ gì lên
                 if crop.size and min(crop.shape[:2]) >= 24:
-                    cv2.imwrite(os.path.join(out, f"neg_{int(time.time())}_{n_crop:05d}.jpg"),
-                                crop)
+                    cf = b[4] if len(b) > 4 else 0.0
+                    # Điểm tin cậy nằm trong TÊN FILE: lọc theo ngưỡng lúc train
+                    # mà không phải đào lại, và nhìn tên là biết cái nào đáng lo.
+                    cv2.imwrite(os.path.join(
+                        out, f"neg_{int(time.time())}_{n_crop:05d}_c{cf:.2f}.jpg"), crop)
                     n_crop += 1
             if n_scan % 20 == 0:
                 print(f"  {n_scan:5d} lượt · {n_crop:5d} ảnh âm "

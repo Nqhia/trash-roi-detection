@@ -134,8 +134,11 @@ class RegionVerifier:
                 crops, conf=self.conf, verbose=False)):
             for b in r.boxes:
                 bx = b.xyxy[0].tolist()
+                # Phần tử thứ 5 là ĐIỂM TIN CẬY. Trước đây chỉ trả toạ độ, nên
+                # không ai trả lời được "detector tự tin bao nhiêu khi nó gật" —
+                # mà chính câu đó quyết định nên chỉnh ngưỡng hay phải train lại.
                 boxes.append((ox + bx[0] / s, oy + bx[1] / s,
-                              ox + bx[2] / s, oy + bx[3] / s))
+                              ox + bx[2] / s, oy + bx[3] / s, float(b.conf[0])))
 
         return self._keep(cells, boxes), boxes
 
@@ -207,5 +210,5 @@ class RegionVerifier:
             for b in r.boxes:
                 bx = b.xyxy[0].tolist()
                 boxes.append((ox + bx[0] / s, oy + bx[1] / s,
-                              ox + bx[2] / s, oy + bx[3] / s))
+                              ox + bx[2] / s, oy + bx[3] / s, float(b.conf[0])))
         return self._keep(cells, boxes), boxes

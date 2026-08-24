@@ -57,6 +57,7 @@ class ScanResult:
     ref_reset: bool = False        # đã vứt nền lượt này (camera bị chỉnh hướng)
     n_sweep_hot: int = 0           # ô do quét detector sau reset tìm ra
     max_run: int = 0               # bộ đếm bền vững lớn nhất — để đo ĐỘ TRỄ thật
+    verify_conf: float = 0.0       # điểm tin cậy CAO NHẤT detector đưa ra
     mask_progress: float = 0.0
     global_change: bool = False    # đổi sáng toàn cục -> đã nạp lại nền, bỏ lượt
     rearmed: bool = False          # vùng sạch trở lại -> mở chốt, sẵn sàng báo tiếp
@@ -420,6 +421,7 @@ class ZoneTrashDetector:
             res.verify_failed = True
             return
         res.verify_boxes = boxes
+        res.verify_conf = max((b[4] for b in boxes if len(b) > 4), default=0.0)
         res.n_verify_dropped = before - len(keep)
         res.hot = keep
 

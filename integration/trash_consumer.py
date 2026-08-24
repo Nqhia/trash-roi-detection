@@ -126,10 +126,14 @@ class TrashConsumer:
                 # trả. Điểm thô của detector không phải xác suất "có phải rác",
                 # đo được là ngưỡng tối ưu của nó không chuyển được sang tầng
                 # ghép. Đừng dựng rule lọc theo score cho nhãn này.
+                # bx[:4] — hộp từ tầng xác nhận có 5 phần tử (phần tử thứ 5 là
+                # điểm tin cậy). Detection.bbox phải ĐÚNG 4, đưa cả 5 vào là
+                # engine dịch toạ độ sai mà không báo lỗi gì.
                 out.append(Detection(
-                    label="trash", score=1.0, bbox=tuple(float(v) for v in bx),
+                    label="trash", score=1.0, bbox=tuple(float(v) for v in bx[:4]),
                     source=self.name,
                     extra={"zone": i, "n_hot": len(res.hot),
+                           "det_conf": round(float(bx[4]), 3) if len(bx) > 4 else None,
                            "n_fresh": res.n_fresh_hot,
                            "escalated": bool(res.escalated),
                            "from_sweep": res.n_sweep_hot > 0}))
