@@ -350,6 +350,46 @@ trúng rác thật ngoài khung nhãn vẫn bị tính là thừa, và bảng đ
 | recall theo sự kiện | càng cao càng tốt | **5/6 sự kiện CCTV thật** · 86% mức vật |
 | độ trễ phát hiện | < 3 phút | **~3,2 phút** — còn hụt chút, đã từ 7,8 xuống |
 
+### Kiểm toán toàn pipeline (28/08) — sáu mối vá
+
+Soi lại từng dòng `core/` với câu hỏi "cái gì sống được khi đổi camera". Kết quả:
+
+**1. `scene_shift` tính sai trục dọc 1,78×** — thumb ép 1920×1080 về 256×256
+nhưng cả `dx` lẫn `dy` đều quy đổi bằng `frame_w/256`. Dịch DỌC bị thổi phồng
+đúng tỉ lệ khung hình: gió lay bracket dọc 7px đọc thành 12,4px → vứt nền oan.
+Mọi ngưỡng dịch chuyển đo trước 28/08 đều đo trong hệ méo này. Đã sửa (quy đổi
+từng trục riêng) + test hồi quy: dịch dọc 12px giờ đọc 12,1px, bản cũ đọc ~21px.
+
+**2. Mốc bù méo mục dần** — guard chỉ bắt đổi sáng ĐỘT NGỘT, còn chiều xuống
+dần thì ECC cứ so với cái mốc chụp buổi sáng: hoặc không hội tụ, hoặc hội tụ
+SAI và nắn bậy cả khung. Giờ mốc được chụp lại mỗi ~20 lượt khi vùng đang yên,
+từ khung ĐÃ NẮN nên không đổi hình học.
+
+**3. Trôi tích luỹ = chốt nền im lặng** — trôi 1px/lượt không bao giờ vượt
+ngưỡng vứt nền (so hai lượt liền nhau), tới khi vượt trần bù 40px thì cả vùng
+lệch → guard chốt hiện trạng làm nền, không ai biết. Giờ kêu to từ 30px (75%
+trần), ~10 phút một lần.
+
+**4. Mặt nạ nhiễu chết trong mode `change_only`** — mẫu số cũ là MỌI lượt nên
+ghế bẩn 8h/41h chỉ đạt 20%, không bao giờ chạm `mute_ratio 0,95` (đo được: 41
+giờ, 0 ô mute). Đổi mẫu số thành "lần ô ĐỔI". Kèm một bài học đắt: bản sửa đầu
+để ô mute tiếp tục HỌC NỀN — mặt nạ mute vật, nuốt vật vào nền, rồi mở mute →
+báo đúng lúc dọn và câm với sự kiện kế. **Test hồi quy bắt được**, sửa lại:
+ô mute ngừng học nền, giữ nền sạch gốc.
+
+**5. `TrashConsumer` nạp state mà quên lưu** — worker restart là cold start,
+mất nền + mặt nạ 5 giờ, và là đường nuốt rác thứ năm. Giờ lưu mỗi 10 lượt, ngay
+khi báo, và khi camera bị gỡ.
+
+**6. Gần như mọi hằng số là của MỘT camera** — `cell_px 48` (px tuyệt đối),
+`thr 6.0` (sàn nhiễu cảm biến đó), `min_px 3.0` (quét trên chính khung đó).
+Thêm `tools/site_calib.py`: đo lại ba nhóm số từ vài phút footage sạch của nơi
+lắp mới, in sẵn YAML; kèm `verify.tuned_for` — đổi weights mà giữ conf cũ (lỗi
+từng làm recall về 0% không kèn trống) giờ bị kêu to ngay lúc khởi tạo.
+
+Sau cả sáu mối vá: selftest + integration PASS, 5 ca nuốt rác sạch, túi thật
+vẫn báo sau 3 lượt, eco 18/21 · 3 hộp thừa, chuỗi sạch 0/36 — không hồi quy.
+
 ### Guard đổi sáng nguy hiểm hơn ở VÙNG NHỎ
 
 Guard tính theo **tỉ lệ** ô đổi (`global_change_frac: 0.45`), nên vùng càng ít ô
@@ -640,6 +680,7 @@ tools/measure_px.py      đo cỡ vật theo px để chọn cell_px
 tools/calibrate.py       dò ngưỡng litter_thr cho mode classifier
 tools/bench_models.py    so nhiều model rác bằng cùng một thước đo
 tools/bench_sweep.py     quét ngưỡng, so ở điểm làm việc tương đương
+tools/site_calib.py      đo hằng số cho NƠI LẮP MỚI từ footage sạch
 tools/absorb_test.py     lỗ nuốt rác khi nền bị vứt — 5 ca A/B/C/D/kiểm chứng
 tools/find_events.py     dò mốc vật bị bỏ lại trong ABODA (NHÃN — phải soi mắt)
 tools/event_latency.py   recall mức sự kiện + phân rã độ trễ trên CCTV thật

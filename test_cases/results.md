@@ -23,4 +23,4 @@ Mặt nạ nhiễu TẮT trong mọi ca (cần ~5 giờ mới chín, không đo 
 |---|---|
 | model đứng riêng | 15/36 · 42% |
 | patch đứng riêng | 20/36 · 56% |
-| **patch + model** | **1/36 · 3%** |
+| **patch + model** | **0/36 · 0%** |

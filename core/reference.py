@@ -130,20 +130,27 @@ THUMB = 256
 
 
 def scene_shift(prev_thumb: np.ndarray | None, thumb: np.ndarray,
-                frame_w: int) -> float:
+                frame_w: int, frame_h: int | None = None) -> float:
     """Độ dịch chuyển khung hình giữa 2 lượt quét, quy về PIXEL ẢNH GỐC.
 
     Camera bị xoay/va chạm là điểm yếu thật của hướng này: toàn bộ ID ô lệch,
     tham chiếu và mặt nạ nhiễu chỉ sai chỗ. Dò bằng phase correlation rồi reset.
 
-    Phải quy đổi về px ảnh gốc, không trả px ảnh thu nhỏ: cùng một ngưỡng cấu
-    hình sẽ có nghĩa khác nhau giữa camera 640 và 1920 nếu không quy đổi.
+    Phải quy đổi dx, dy RIÊNG THEO TỪNG TRỤC. Thumb bị ép về 256x256 nên khung
+    16:9 nén dọc mạnh hơn ngang (1080/256 so với 1920/256); bản cũ nhân cả hai
+    trục với frame_w/256, làm dịch DỌC bị thổi phồng đúng bằng tỉ lệ khung hình
+    — 1,78x với 1080p. Camera bị gió lay bracket theo chiều dọc 7px đọc thành
+    12,4px: vượt ngưỡng vứt nền 12px một cách oan, kéo theo reset + resweep.
+    Mọi ngưỡng dịch chuyển từng đo trước 28/08 đều đo trong hệ méo này.
     """
     if prev_thumb is None or prev_thumb.shape != thumb.shape:
         return 0.0
+    if frame_h is None:          # gọi kiểu cũ: coi khung vuông (giữ tương thích)
+        frame_h = frame_w
     (dx, dy), _ = cv2.phaseCorrelate(prev_thumb, thumb)
-    d = (dx * dx + dy * dy) ** 0.5
-    return float(d * frame_w / max(1, thumb.shape[1]))
+    sx = frame_w / max(1, thumb.shape[1])
+    sy = frame_h / max(1, thumb.shape[0])
+    return float(((dx * sx) ** 2 + (dy * sy) ** 2) ** 0.5)
 
 
 def make_thumb(frame: np.ndarray, size: int = THUMB) -> np.ndarray:

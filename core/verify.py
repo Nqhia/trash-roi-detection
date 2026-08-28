@@ -21,6 +21,7 @@ Và nó rẻ: gộp xong còn ~1 vùng mỗi lượt thay vì 9-12 ô quét toà
 from __future__ import annotations
 
 import logging
+import os
 
 import numpy as np
 
@@ -44,6 +45,19 @@ class RegionVerifier:
         self.min_side = int(v.get("min_side_px", 160))
         self.upscale = float(v.get("upscale", 2.0))
         self.max_regions = int(v.get("max_regions", 8))
+        # `weights` + `conf` là MỘT CẶP hiệu chỉnh, không phải hai dòng độc lập.
+        # Đã tự dính: thay weights giữ conf 0,20 làm recall về 0% mà không có
+        # lỗi nào — model vẫn chạy, chỉ là câm. Ghi `tuned_for` = tên file
+        # weights lúc đo conf; lệch là kêu to ngay lúc khởi tạo.
+        self.tuned_for = str(v.get("tuned_for", "")).strip()
+        if self.enabled and self.tuned_for:
+            base = os.path.basename(self.weights)
+            if base != self.tuned_for:
+                logger.warning(
+                    "verify: weights=%s nhưng conf=%.2f được hiệu chỉnh cho %s — "
+                    "NGƯỠNG KHÔNG CHUYỂN ĐƯỢC GIỮA MODEL. Đo lại bằng "
+                    "tools/bench_sweep.py rồi cập nhật conf + tuned_for.",
+                    base, self.conf, self.tuned_for)
         # Soi THEM ở cỡ nhỏ hơn. Vì sao cần, đo trên rác thật vứt trước camera:
         # túi ni lông có nút buộc 44px, ở vùng 320px phóng 2x model cho 0 hộp,
         # nhưng cắt sát 96-128px thì cho 0,38-0,49. Vật nhỏ trong vùng to thì

@@ -20,7 +20,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.pipeline import ZoneTrashDetector      # noqa: E402
-from core.reference import CellReference          # noqa: E402
+from core.reference import CellReference, make_thumb, scene_shift  # noqa: E402
 
 W, H = 640, 480
 ZONE = [(0.10, 0.30), (0.90, 0.30), (0.90, 0.90), (0.10, 0.90)]
@@ -193,6 +193,15 @@ def main():
     check("bị che -> không kết luận bẩn", not r.dirty)
     r = run(det, t, trash=True); t += STEP
     check("người đi khỏi -> thấy lại rác", r.dirty)
+
+    # --- scene_shift phải đúng ĐƠN VỊ theo từng trục ----------------------
+    # Bản cũ nhân cả dy với frame_w/256 nên dịch DỌC bị thổi phồng đúng tỉ lệ
+    # khung hình (1,78x với 16:9): hích dọc 7px đọc thành 12,4px -> vứt nền oan.
+    print("kiểm scene_shift trục dọc")
+    _im = _textured(60, 200, 24, seed=7)[:360, :640]
+    _dv = scene_shift(make_thumb(_im), make_thumb(np.roll(_im, 12, axis=0)), 640, 360)
+    check("dịch dọc 12px đọc ra ~12px (không phải ~21px)",
+          9.0 <= _dv <= 15.0, f"({_dv:.1f}px)")
 
     # --- Giai đoạn 6: camera bị xoay --------------------------------------
     print("giai đoạn 6 — camera bị va chạm (dịch 20px)")

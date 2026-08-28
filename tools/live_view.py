@@ -200,7 +200,7 @@ def check_anchor(zone_path: str, frame, thr_px: float, save: bool) -> str | None
         cv2.imwrite(path, make_thumb(g).astype(np.uint8))
         return None
     old = cv2.imread(path, cv2.IMREAD_GRAYSCALE).astype(np.float32)
-    d = scene_shift(old, make_thumb(g), frame.shape[1])
+    d = scene_shift(old, make_thumb(g), frame.shape[1], frame.shape[0])
     if d > thr_px:
         return (f"CAMERA DA LECH ~{d:.0f}px so voi luc ve vung (nguong {thr_px:.0f}). "
                 f"Ve lai ROI hoac chinh camera ve cho cu, roi chay lai voi --save-anchor")

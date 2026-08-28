@@ -194,6 +194,16 @@ class ZoneTrashDetector:
         # đã đủ làm 86% số ô "đổi". Đo được: hích 30px, bù ở ds4 xong vẫn
         # còn 179/360 ô đổi -> guard bắn -> mù cả vùng.
         self.stab_fine_px = float(s.get("fine_px", 8.0))
+        # Mốc bù méo MỤC DẦN khi ánh sáng trôi chậm: guard đổi sáng chỉ bắt cú
+        # đổi ĐỘT NGỘT, còn chiều xuống dần thì mốc chụp buổi sáng cứ nằm đó
+        # nhiều giờ. ECC so cường độ với một mốc lệch sáng thì hoặc không hội tụ
+        # (vô hại) hoặc hội tụ SAI và nắn bậy cả khung — loại lỗi đã đo được làm
+        # ô đổi tăng 82 -> 158. Nên khi vùng đang yên (ít ô đổi, không ô nóng,
+        # không resweep) thì định kỳ chụp lại mốc. Chụp từ khung ĐÃ NẮN: khung đó
+        # nằm trong hệ toạ độ của mốc cũ, nên đổi mốc không làm lệch hình học.
+        self.stab_anchor_refresh = int(s.get("anchor_refresh_scans", 20))
+        self._anchor_age = 0
+        self._drift_note = 0
 
         # Tầng xác nhận bằng detector. Xem core/verify.py để biết vì sao nó nằm
         # ở đây chứ không nằm trong scorers.py.
@@ -349,6 +359,20 @@ class ZoneTrashDetector:
                 if d2 <= self.stab_max_px and abs(deg2) <= self.stab_max_deg:
                     ds, dx, dy, deg, W, d = fds, dx2, dy2, deg2, W2, d2
         res.stab_px, res.stab_deg = d, deg
+        # Trôi TÍCH LUỸ: scene_shift chỉ so hai lượt liền nhau nên trôi 1px/lượt
+        # không bao giờ vượt ngưỡng vứt nền; còn `d` ở đây là lệch so với MỐC,
+        # tức tổng trôi. Quá `max_px` là _stabilize buông tay -> cả vùng lệch ->
+        # guard đổi sáng chốt hiện trạng làm nền IM LẶNG. Kêu to TRƯỚC khi tới
+        # đó, để người vận hành chỉnh camera / chốt lại nền một cách chủ động.
+        if d >= 0.75 * self.stab_max_px:
+            self._drift_note += 1
+            if self._drift_note % 20 == 1:      # ~10 phút một lần ở nhịp 30s
+                logger.warning(
+                    "[%s] camera TRÔI TÍCH LUỸ %.0fpx so với mốc (trần bù %.0fpx)"
+                    " — sắp hết khả năng nắn, cần chỉnh camera hoặc chốt lại nền",
+                    self.label, d, self.stab_max_px)
+        else:
+            self._drift_note = 0
         # Dưới ngưỡng này thì nội suy chỉ làm ảnh nhoè thêm mà chẳng bù được gì —
         # mà nhoè lại chính là thứ cổng đổi nhìn thấy.
         # Xét TỔNG độ dịch mà phép nắn gây ra ở chỗ xa tâm nhất, không xét riêng
@@ -363,6 +387,25 @@ class ZoneTrashDetector:
             return frame
         res.stab_ok = True
         return apply_warp(frame, W, ds)
+
+    def _maybe_refresh_anchor(self, res: "ScanResult", frame: np.ndarray) -> None:
+        """Chụp lại mốc bù méo khi vùng đang yên — chống mốc mục vì sáng trôi chậm.
+
+        Chỉ khi: nắn lượt này ổn, ít ô đổi, không ô nóng, không đang resweep.
+        Khung truyền vào là khung ĐÃ NẮN nên nằm đúng hệ toạ độ của mốc cũ —
+        thay mốc không đổi hình học, chỉ cập nhật ánh sáng.
+        """
+        if not self.stab_on:
+            return
+        self._anchor_age += 1
+        if self._anchor_age < self.stab_anchor_refresh:
+            return
+        if (res.n_changed > max(2, 0.05 * max(1, res.n_cells))
+                or res.hot or self._resweep > 0 or not res.stab_ok):
+            return
+        self._anchor_age = 0
+        self._stab_gray = (frame if frame.ndim == 2
+                           else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
 
     def _arm_resweep(self) -> None:
         """Bật chế độ quét lại sau khi nền bị vứt."""
@@ -524,7 +567,7 @@ class ZoneTrashDetector:
         #    Nắn cũng lo luôn rung nhỏ (gió, xe tải chạy qua, giãn nở nhiệt) mà
         #    cổng dưới không chặn: 2px đã đủ làm 86% số ô "đổi".
         thumb = make_thumb(frame)
-        res.scene_shift_px = scene_shift(self._thumb, thumb, w)
+        res.scene_shift_px = scene_shift(self._thumb, thumb, w, h)
         self._thumb = thumb
         if self.stab_on:
             frame = self._stabilize(frame, res)
@@ -615,8 +658,9 @@ class ZoneTrashDetector:
             # này vừa bị chốt thành nền, cổng đổi mù -> để detector quét lại.
             self._arm_resweep()
             res.global_change = True
-            logger.info("[%s] đổi sáng toàn cục (%d/%d ô, trải %.0f%%) -> nạp lại "
-                        "nền, bỏ lượt này", self.label, chg_known, known, spread * 100)
+            logger.info("[%s] đổi sáng toàn cục (%d/%d ô, trải %.0f%%, stab "
+                        "%.1fpx) -> nạp lại nền, bỏ lượt này", self.label,
+                        chg_known, known, spread * 100, res.stab_px)
             self.confirm.passed(self.key, False, self.n, self.m)
             res.ms = (time.perf_counter() - t0) * 1000.0
             return res
@@ -648,18 +692,33 @@ class ZoneTrashDetector:
                         self.ref.observe_clean(c.id, self.ref.describe(patch))
                 raw = self._run.get(c.id, 0) >= self.dwell
                 res.scores[c.id] = min(1.0, self._run.get(c.id, 0) / max(1, self.dwell))
+                # Mặt nạ nhiễu: mẫu số phải là "lần ô ĐỔI", không phải mọi lượt.
+                # Thiết kế gốc (mode classifier) đếm "bẩn / lần ĐƯỢC HỎI" — nắp
+                # cống bị hỏi 100 lần, bẩn 100 lần -> mute. Bản change_only cũ
+                # đếm trên MỌI lượt, nên ghế bị dời 8h trong lần chạy 41h chỉ
+                # đạt 20%, không bao giờ chạm mute_ratio 0,95 — đo được 41 giờ
+                # chạy thật, 0 ô được mute: lớp diệt FP hệ thống thực chất chết.
+                # Riêng ô ĐÃ MUTE thì lượt không-đổi phải đếm là sạch, không thì
+                # clean_streak không tích được và mute không bao giờ mở lại.
                 if self.clutter_on:
-                    self.clutter.update(c.id, raw)
+                    if c.id in changed:
+                        self.clutter.update(c.id, raw)
+                    elif self.clutter.is_muted(c.id):
+                        self.clutter.update(c.id, False)
                 if raw:
                     res.raw_hot.append(c)
                 muted = self.clutter_on and self.clutter.is_muted(c.id)
                 if muted:
                     if raw:
                         res.n_muted_hit += 1
-                    # Đã mute -> coi như nền, cho tham chiếu học để thôi tốn lượt.
-                    if self.change_on:
-                        self.ref.observe_clean(c.id, self.ref.describe(patch))
-                        self._run[c.id] = 0
+                    # KHÔNG cho tham chiếu học ô đã mute (bản cũ có học). Học
+                    # tức là NUỐT VẬT VÀO NỀN: sau đó clean_streak mở mute lại
+                    # trong khi "nền" đã là cái vật, nên VẬT BỊ DỌN ĐI thành sự
+                    # kiện mới (báo đúng lúc dọn), còn vật mới đặt vào đúng chỗ
+                    # đó thì khớp nền và bị nuốt im. Test hồi quy bắt được đúng
+                    # chuỗi này. Giữ nguyên nền SẠCH gốc thì mọi thứ tự khớp:
+                    # vật rời đi -> ô khớp nền -> hết đổi -> streak tích -> mở
+                    # mute; sự kiện sau ở chỗ đó báo bình thường.
                 elif raw:
                     res.hot.append(c)
             res.n_scored = len(live)
@@ -669,6 +728,7 @@ class ZoneTrashDetector:
             res.dirty = len(res.hot) >= self.min_hot
             res.mask_progress = self.clutter.progress() if self.clutter_on else 1.0
             self._decide_alert(res, now)
+            self._maybe_refresh_anchor(res, frame)
             self._scans += 1
             res.ms = (time.perf_counter() - t0) * 1000.0
             return res
@@ -736,6 +796,7 @@ class ZoneTrashDetector:
         res.dirty = len(res.hot) >= self.min_hot
         res.mask_progress = self.clutter.progress() if self.clutter_on else 1.0
         self._decide_alert(res, now)
+        self._maybe_refresh_anchor(res, frame)
         self._scans += 1
         res.ms = (time.perf_counter() - t0) * 1000.0
         return res

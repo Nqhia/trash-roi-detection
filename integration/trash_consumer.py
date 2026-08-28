@@ -71,6 +71,7 @@ class TrashConsumer:
         if v.get("weights") and not os.path.isabs(v["weights"]):
             v["weights"] = os.path.join(HERE, v["weights"])
         self._det: dict = {}        # (camera_id, zone_idx) -> ZoneTrashDetector
+        self._nscan: dict = {}      # (camera_id, zone_idx) -> số lượt, để lưu state
         os.makedirs(STATE, exist_ok=True)
 
     @staticmethod
@@ -117,7 +118,15 @@ class TrashConsumer:
         out = []
         for i, poly in enumerate(polys):
             norm = [[float(x) / w, float(y) / h] for x, y in poly]
-            res = self._for(cam_id, i).scan(ctx.image, norm, (), now=ctx.t)
+            det = self._for(cam_id, i)
+            res = det.scan(ctx.image, norm, (), now=ctx.t)
+            # LƯU state định kỳ và ngay khi báo. Bản đầu chỉ NẠP mà quên LƯU:
+            # worker restart là cold start — mất nền lẫn mặt nạ đã học 5 giờ,
+            # và rác đang nằm trong vùng thành nền mới (đường nuốt rác thứ 5).
+            k2 = (cam_id, i)
+            self._nscan[k2] = self._nscan.get(k2, 0) + 1
+            if res.alert or self._nscan[k2] % 10 == 0:
+                det.save_state()
             if not res.alert:
                 continue
             for bx in (res.verify_boxes or self._cell_boxes(res)):
@@ -149,4 +158,6 @@ class TrashConsumer:
 
     def on_camera_removed(self, camera_id: str) -> None:
         for key in [k for k in self._det if k[0] == camera_id]:
+            self._det[key].save_state()          # giữ nền/mặt nạ cho lần bật lại
             self._det.pop(key, None)
+            self._nscan.pop(key, None)

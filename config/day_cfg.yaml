@@ -48,6 +48,10 @@ stabilize:
   # so o "doi". Do duoc: hich 30px, nan mot buoc xong VAN con 179/360 o doi ->
   # guard doi sang ban -> mu ca vung. Them buoc min: 179 -> 104 o, guard thoi ban.
   fine_px: 8.0
+  # Chup lai moc bu meo moi ~20 luot KHI VUNG YEN: guard doi sang chi bat cu doi
+  # dot ngot, con anh sang troi cham lam moc muc dan — ECC so voi moc lech sang
+  # co the hoi tu SAI va nan bay ca khung (loai loi tung do duoc 82 -> 158 o doi).
+  anchor_refresh_scans: 20
   max_px: 40                 # lon hon = camera bi xoay that, de cong dich khung lo
   max_deg: 3.0
 
@@ -74,6 +78,10 @@ decide:
 verify:
   enabled: true
   weights: models/trash_yolo11n.pt   # tuong doi voi THU MUC GOC — chay lenh tu day
+  # weights + conf la MOT CAP hieu chinh. Doi weights giu conf cu lam recall ve
+  # 0% ma khong co loi nao (da tu dinh). tuned_for = ten file weights luc do
+  # conf; lech la RegionVerifier keu to ngay luc khoi tao.
+  tuned_for: trash_yolo11n.pt
   # 0,20 chu khong phai 0,10: do o CO VUNG 320. Doc bang quet, dung suy tu
   # so do duoc khi chay model dung rieng — hai ben dua vao model hai loai anh
   # khac nhau nen nguong khong chuyen duoc.
@@ -103,7 +111,13 @@ verify:
   # nham tren chuoi CCTV sach nhay 0% -> 39%, gan bang detector chay mot minh.
   # Cho tach duoc hai ca: nguoi di qua chi giu o nong 1-2 luot roi thoi, vat bo
   # lai giu mai. Doi ben vung truoc, moi cho soi ky.
-  escalate_after: 8
+  # TAT (0). Bat len 8 da do tren luong that 23 gio: canh bao 19,8 -> 143,1 MOI
+  # NGAY, o nong sau detector 5,1% -> 46,2%, leo thang "cuu" 9769 o. Bo test
+  # khong bat duoc vi chuoi sach chi dai 36 luot, con o luong that o nong ton
+  # tai 88,5% so luot nen `_reject_run` cham nguong gan nhu moi luc.
+  # Cai bat duoc cai tui that KHONG phai lop nay ma la `_post_reset_sweep` soi o
+  # co `escalate_scale` — do duoc: tat leo thang van bao sau 3 luot.
+  escalate_after: 0
   # 0,4 chu khong phai 0,5. Do tren dung cai tui do: scale 0,5 ra hop o (931,883)
   # — KHONG trung tui, giu 0 o. 0,4 ra 0,65 dung tren tui. Suyt chot 0,5 vi bo
   # test khong co ca nay, va no se im lang khong bat duoc rac that.
