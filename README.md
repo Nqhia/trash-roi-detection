@@ -347,7 +347,7 @@ trúng rác thật ngoài khung nhãn vẫn bị tính là thừa, và bảng đ
 | chỉ số | ngưỡng | pipeline này |
 |---|---|---|
 | cảnh báo nhầm / camera / ngày | < 1–2 | **chưa đo được** (xem dưới) |
-| recall theo sự kiện | càng cao càng tốt | **5/6 sự kiện CCTV thật** · 86% mức vật |
+| recall theo sự kiện | càng cao càng tốt | **báo đúng chỗ 3/6** · có báo 6/6 (thước cũ không kiểm vị trí — bị thổi phồng, xem `test_cases/BAO_CAO.md` §4) |
 | độ trễ phát hiện | < 3 phút | **~3,2 phút** — còn hụt chút, đã từ 7,8 xuống |
 
 ### Kiểm toán toàn pipeline (28/08) — sáu mối vá
@@ -684,6 +684,8 @@ tools/site_calib.py      đo hằng số cho NƠI LẮP MỚI từ footage sạc
 tools/absorb_test.py     lỗ nuốt rác khi nền bị vứt — 5 ca A/B/C/D/kiểm chứng
 tools/find_events.py     dò mốc vật bị bỏ lại trong ABODA (NHÃN — phải soi mắt)
 tools/event_latency.py   recall mức sự kiện + phân rã độ trễ trên CCTV thật
+tools/event_report.py    xuất ẢNH từng sự kiện — thước ĐÚNG CHỖ (soi mắt bắt
+                         được thước cũ đếm cả báo sai chỗ: 6/6 -> thật 3/6)
 tools/bag_test.py        ca thật: túi ni lông người vứt vào vùng 24/08
 training/tools/eval_datasets.py   recall tách ĐÃ TRAIN / VAL / CHƯA HỀ THẤY
 training/tools/recall_by_size.py  recall theo cỡ vật — vực dốc dưới 12px
